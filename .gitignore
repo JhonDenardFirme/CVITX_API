@@ -1,4 +1,21 @@
-.venv/
-.env
+# python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+
+# env & local configs
+.env
+.env.*.local
+*.log
+
+# node (if you add Next.js here later)
+node_modules/
+.next/
+dist/
+
+# os cruft
+.DS_Store
+Thumbs.db
