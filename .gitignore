@@ -19,3 +19,12 @@ dist/
 # os cruft
 .DS_Store
 Thumbs.db
+# local backups & env
+*.bak.*
+*.bak
+*.save*
+api/.env.bak
+# models/weights
+*.pt
+# alembic scratch
+api/alembic.ini.bak
