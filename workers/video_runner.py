@@ -3,6 +3,10 @@ import re, boto3
 os.environ.pop("CUDA_VISIBLE_DEVICES", None)
 os.environ["ULTRALYTICS_DEVICE"] = "cpu"
 
+import logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+
 S3 = boto3.client("s3", region_name=os.getenv("AWS_REGION","ap-southeast-2"))
 
 def _emit_existing_snapshots(payload: dict):
@@ -131,6 +135,7 @@ def handle_process_video(body: dict):
     cap.release()
     cap = cv2.VideoCapture(local)
 
+    emit_count = 0
     for tid, rec in best.items_ready():
         cap.set(cv2.CAP_PROP_POS_FRAMES, rec.frame_idx)
         ok, frame = cap.read()
@@ -162,9 +167,11 @@ def handle_process_video(body: dict):
             "detectedAt": iso_add_ms(recorded_at, offset_ms) if recorded_at else None,
             "yolo_type": yolo_type
         })
+        emit_count += 1
 
     cap.release()
     set_status(vid, "done")
+    logging.info("[worker_video] emitted %d snapshots for VID=%s", emit_count, vid)
 
 def run():
     print("[worker_video] polling:", SQS_VIDEO_QUEUE_URL, "at", utcnow_iso())
