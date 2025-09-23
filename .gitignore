@@ -28,3 +28,11 @@ api/.env.bak
 *.pt
 # alembic scratch
 api/alembic.ini.bak
+# local backups & edits
+*.bak
+*.bak.*
+*.save*
+# env backups
+api/.env.bak
+# model weights
+*.pt

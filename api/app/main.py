@@ -5,6 +5,7 @@ from .routes import health, uploads, videos
 
 from .routes import queue as queue_routes
 from .routes import snapshots as snapshot_routes
+from .routes import jobs as jobs_routes
 
 
 app = FastAPI(title="CVITX API")
@@ -22,3 +23,5 @@ app.include_router(uploads.router)
 app.include_router(videos.router)
 app.include_router(queue_routes.router)
 app.include_router(snapshot_routes.router)
+app.include_router(jobs_routes.router)
+

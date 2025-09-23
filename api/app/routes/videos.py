@@ -6,7 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..deps import get_db, require_api_key
-from ..models import Video, VideoStatus
+from ..models import Video
 
 router = APIRouter()
 
@@ -37,8 +37,8 @@ def register_video(body: RegisterVideoRequest, db: Session = Depends(get_db)):
         camera_code=body.camera_code,
         recorded_at=body.recordedAt,
         s3_key_raw=body.s3_key_raw,
-        status=VideoStatus.uploaded,
+        status="uploaded",
     )
     db.add(v)
     db.commit()
-    return {"ok": True, "video_id": str(v.id), "camera_code": v.camera_code, "status": v.status.value}
+    return {"ok": True, "video_id": str(v.id), "camera_code": v.camera_code, "status": v.status}
