@@ -1,3 +1,4 @@
+from app.routes import detections as detections_routes
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
@@ -24,4 +25,14 @@ app.include_router(videos.router)
 app.include_router(queue_routes.router)
 app.include_router(snapshot_routes.router)
 app.include_router(jobs_routes.router)
+app.include_router(detections_routes.router)
 
+
+
+@app.get("/healthz")
+def healthz():
+    return {"ok": True}
+from app.routes.videos_status import router as videos_status_router
+from app.routes.exports import router as exports_router
+app.include_router(videos_status_router)
+app.include_router(exports_router)
