@@ -7,6 +7,7 @@ from app.routes.videos_status import router as videos_status_router
 from app.routes.exports import router as exports_router
 from app.utils.version import git_sha_short
 from app.routes import detections as detections_routes
+from app.routes import analysis_images
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
@@ -29,6 +30,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(analysis_images.router)
 app.include_router(uploads.router)
 app.include_router(videos.router)
 app.include_router(queue_routes.router)
