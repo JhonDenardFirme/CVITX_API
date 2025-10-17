@@ -1,0 +1,1378 @@
+/home/ubuntu/cvitx/api/app/routes/uploads.py:2:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/app/routes/uploads.py:9:class PresignReq(BaseModel):
+/home/ubuntu/cvitx/api/app/routes/jobs.py:2:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/app/routes/jobs.py:24:class AnalyzeBody(BaseModel):
+/home/ubuntu/cvitx/api/app/routes/detections.py:7:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/app/routes/detections.py:26:class DetectionSummary(BaseModel):
+/home/ubuntu/cvitx/api/app/routes/detections.py:43:class PaginationMeta(BaseModel):
+/home/ubuntu/cvitx/api/app/routes/detections.py:50:class DetectionListResponse(BaseModel):
+/home/ubuntu/cvitx/api/app/routes/detections.py:54:class DetectionDetail(BaseModel):
+/home/ubuntu/cvitx/api/app/routes/users_profile.py:4:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/app/routes/users_profile.py:24:class PresignOut(BaseModel):
+/home/ubuntu/cvitx/api/app/routes/users_profile.py:28:class UrlOut(BaseModel):
+/home/ubuntu/cvitx/api/app/routes/workspace_files.py:4:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/app/routes/workspace_files.py:32:class PresignIn(BaseModel):
+/home/ubuntu/cvitx/api/app/routes/workspace_files.py:36:class PresignOut(BaseModel):
+/home/ubuntu/cvitx/api/app/routes/snapshots.py:3:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/app/routes/snapshots.py:12:class EnqueueSnapshot(BaseModel):
+/home/ubuntu/cvitx/api/app/routes/workspaces.py:3:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/app/routes/workspaces.py:16:class WsOut(BaseModel):
+/home/ubuntu/cvitx/api/app/routes/workspaces.py:23:class WsCreate(BaseModel):
+/home/ubuntu/cvitx/api/app/routes/workspaces.py:29:class WsPatch(BaseModel):
+/home/ubuntu/cvitx/api/app/routes/videos.py:2:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/app/routes/videos.py:13:class RegisterVideoRequest(BaseModel):
+/home/ubuntu/cvitx/api/app/routes/queue.py:2:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/app/routes/queue.py:11:class EnqueueProcessVideo(BaseModel):
+/home/ubuntu/cvitx/api/app/auth/router.py:3:from pydantic import BaseModel, EmailStr
+/home/ubuntu/cvitx/api/app/auth/router.py:16:class LoginIn(BaseModel):
+/home/ubuntu/cvitx/api/app/auth/router.py:20:class LoginOut(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/base.py:12:from pydantic import AliasChoices, AliasPath, BaseModel, TypeAdapter
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/base.py:370:            class SubSubSub(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/base.py:373:            class SubSub(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/base.py:377:            class Sub(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/base.py:432:                and _lenient_issubclass(sub_model_field.annotation, BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/base.py:504:                    # and _lenient_issubclass(field.annotation, BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:38:from pydantic import BaseModel, Field
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:77:class CliMutuallyExclusiveGroup(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:502:    def _get_sub_models(self, model: type[BaseModel], field_name: str, field_info: FieldInfo) -> list[type[BaseModel]]:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:509:        sub_models: list[type[BaseModel]] = []
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:519:    def _verify_cli_flag_annotations(self, model: type[BaseModel], field_name: str, field_info: FieldInfo) -> None:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:530:    def _sort_arg_fields(self, model: type[BaseModel]) -> list[tuple[str, FieldInfo]]:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:545:                                f'subcommand argument {model.__name__}.{field_name} has type not derived from BaseModel'
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:681:        model: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:702:            sub_models: list[type[BaseModel]] = self._get_sub_models(model, field_name, field_info)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:894:        model: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:895:        sub_models: list[type[BaseModel]],
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/types.py:11:    from pydantic.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/types.py:13:    PydanticModel = TypeVar('PydanticModel', bound=Union[PydanticDataclass, BaseModel])
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/utils.py:11:from pydantic import BaseModel, Json, RootModel, Secret
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/utils.py:79:        annotation, (BaseModel, Mapping, Sequence, tuple, set, frozenset, deque)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/sources/utils.py:135:    raise SettingsError(f'Error: {model_cls.__name__} is not subclass of BaseModel or pydantic.dataclasses.dataclass')
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/main.py:16:from pydantic.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/main.py:108:class BaseSettings(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/main.py:476:    A utility class for running Pydantic `BaseSettings`, `BaseModel`, or `pydantic.dataclasses.dataclass` as
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/main.py:536:        Runs a Pydantic `BaseSettings`, `BaseModel`, or `pydantic.dataclasses.dataclass` as a CLI application.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/main.py:555:            SettingsError: If model_cls is not subclass of `BaseModel` or `pydantic.dataclasses.dataclass`.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic_settings/main.py:561:                f'Error: {model_cls.__name__} is not subclass of BaseModel or pydantic.dataclasses.dataclass'
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/ultralytics/nn/__init__.py:4:    BaseModel,
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/ultralytics/nn/__init__.py:26:    "BaseModel",
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/ultralytics/nn/tasks.py:97:class BaseModel(torch.nn.Module):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/ultralytics/nn/tasks.py:118:        Create a BaseModel instance
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/ultralytics/nn/tasks.py:119:        >>> model = BaseModel()
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/ultralytics/nn/tasks.py:288:            (BaseModel): An updated BaseModel object.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/ultralytics/nn/tasks.py:342:        """Initialize the loss criterion for the BaseModel."""
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/ultralytics/nn/tasks.py:346:class DetectionModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/ultralytics/nn/tasks.py:614:class ClassificationModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/polars/_utils/construction/utils.py:59:    """Check if value derives from a pydantic.BaseModel."""
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/polars/_utils/construction/utils.py:60:    return _check_for_pydantic(value) and isinstance(value, pydantic.BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/utils.py:35:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/utils.py:119:        if lenient_issubclass(first_field.type_, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:13:from pydantic import AnyUrl, BaseModel, Field
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:58:class BaseModelWithConfig(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:68:class Contact(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:74:class License(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:80:class Info(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:90:class ServerVariable(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:96:class Server(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:102:class Reference(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:106:class Discriminator(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:111:class XML(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:119:class ExternalDocumentation(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:130:class Schema(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:244:class Encoding(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:252:class MediaType(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:259:class ParameterBase(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:283:class RequestBody(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:289:class Link(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:298:class Response(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:305:class Operation(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:321:class PathItem(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:344:class SecurityBase(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:371:class OAuthFlow(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:393:class OAuthFlows(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:415:class Components(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:429:class Tag(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/openapi/models.py:435:class OpenAPI(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/applications.py:794:                from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/applications.py:796:                class Item(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/applications.py:2200:        from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/applications.py:2202:        class Item(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/applications.py:2578:        from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/applications.py:2580:        class Item(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/applications.py:4075:        from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/applications.py:4077:        class Item(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/encoders.py:21:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/encoders.py:216:    if isinstance(obj, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/security/http.py:6:from fastapi.openapi.models import HTTPBase as HTTPBaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/security/http.py:10:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/security/http.py:16:class HTTPBasicCredentials(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/security/http.py:29:class HTTPAuthorizationCredentials(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/security/http.py:78:        self.model = HTTPBaseModel(scheme=scheme, description=description)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/security/http.py:182:        self.model = HTTPBaseModel(scheme="basic", description=description)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/security/http.py:399:        self.model = HTTPBaseModel(scheme="digest", description=description)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/security/base.py:1:from fastapi.openapi.models import SecurityBase as SecurityBaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/security/base.py:5:    model: SecurityBaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/routing.py:60:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/routing.py:92:    if isinstance(res, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/routing.py:2089:        from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/routing.py:2091:        class Item(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/routing.py:2471:        from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/routing.py:2473:        class Item(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/routing.py:3607:        from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/routing.py:3609:        class Item(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/routing.py:3989:        from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/routing.py:3991:        class Item(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/routing.py:4371:        from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/routing.py:4373:        class Item(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/exceptions.py:3:from pydantic import BaseModel, create_model
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/exceptions.py:139:RequestErrorModel: Type[BaseModel] = create_model("Request")
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/exceptions.py:140:WebSocketErrorModel: Type[BaseModel] = create_model("WebSocket")
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/types.py:5:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/types.py:9:ModelNameMap = Dict[Union[Type[BaseModel], Type[Enum]], str]
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/utils.py:29:from pydantic import BaseModel, create_model
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/utils.py:37:_CLONED_TYPES_CACHE: MutableMapping[Type[BaseModel], Type[BaseModel]] = (
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/utils.py:112:    cloned_types: Optional[MutableMapping[Type[BaseModel], Type[BaseModel]]] = None,
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/utils.py:125:    if lenient_issubclass(original_type, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/utils.py:126:        original_type = cast(Type[BaseModel], original_type)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/_compat.py:24:from pydantic import BaseModel, create_model
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/_compat.py:176:    def _model_rebuild(model: Type[BaseModel]) -> None:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/_compat.py:180:        model: BaseModel, mode: Literal["json", "python"] = "json", **kwargs: Any
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/_compat.py:184:    def _get_model_config(model: BaseModel) -> Any:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/_compat.py:284:    ) -> Type[BaseModel]:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/_compat.py:286:        BodyModel: Type[BaseModel] = create_model(model_name, **field_params)  # type: ignore[call-overload]
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/_compat.py:289:    def get_model_fields(model: Type[BaseModel]) -> List[ModelField]:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/_compat.py:386:        flat_models: Set[Union[Type[BaseModel], Type[Enum]]],
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/_compat.py:387:        model_name_map: Dict[Union[Type[BaseModel], Type[Enum]], str],
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/_compat.py:408:            and not lenient_issubclass(field.type_, BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/_compat.py:425:            field.type_, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/_compat.py:450:    def _model_rebuild(model: Type[BaseModel]) -> None:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/_compat.py:454:        model: BaseModel, mode: Literal["json", "python"] = "json", **kwargs: Any
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/_compat.py:458:    def _get_model_config(model: BaseModel) -> Any:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/_compat.py:525:    ) -> Type[BaseModel]:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/_compat.py:531:    def get_model_fields(model: Type[BaseModel]) -> List[ModelField]:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/_compat.py:570:        lenient_issubclass(annotation, (BaseModel, Mapping, UploadFile))
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/_compat.py:664:def get_cached_model_fields(model: Type[BaseModel]) -> List[ModelField]:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/dependencies/utils.py:61:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/dependencies/utils.py:222:    if len(fields) == 1 and lenient_issubclass(first_field.type_, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/dependencies/utils.py:513:                    lenient_issubclass(field.type_, BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/dependencies/utils.py:762:    if len(fields) == 1 and lenient_issubclass(first_field.type_, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/dependencies/utils.py:828:    """Check if field type is a Union where all members are BaseModel subclasses."""
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/dependencies/utils.py:840:        if not lenient_issubclass(arg, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/dependencies/utils.py:859:    # If it's a Form (or File) field, it has to be a BaseModel (or a union of BaseModels) to be top level
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/dependencies/utils.py:863:        and not lenient_issubclass(first_field.type_, BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/dependencies/utils.py:928:        and lenient_issubclass(first_field.type_, BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/env_settings.py:8:from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/env_settings.py:23:class BaseSettings(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/fields.py:293:      assigned on an instance.  The BaseModel Config must set validate_assignment to True
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/fields.py:1118:                # BaseModel or dataclass
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/fields.py:1163:        from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/fields.py:1168:            or lenient_issubclass(self.type_, (BaseModel, list, set, frozenset, dict))
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/__init__.py:45:    'BaseModel',
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/annotated_types.py:5:from pydantic.v1.main import BaseModel, create_model
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/annotated_types.py:26:) -> Type['BaseModel']:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/annotated_types.py:28:    Create a `BaseModel` based on the fields of a `TypedDict`.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/annotated_types.py:58:def create_model_from_namedtuple(namedtuple_cls: Type['NamedTuple'], **kwargs: Any) -> Type['BaseModel']:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/annotated_types.py:60:    Create a `BaseModel` based on the fields of a named tuple.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/main.py:90:    Model = TypeVar('Model', bound='BaseModel')
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/main.py:92:__all__ = 'BaseModel', 'create_model', 'validate_model'
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/main.py:111:# When creating a `BaseModel` instance, we bypass all the methods, properties... added to the model
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/main.py:113:# Note `ModelMetaclass` refers to `BaseModel`, but is also used to *create* `BaseModel`, so we need to add this extra
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/main.py:114:# (somewhat hacky) boolean to keep track of whether we've created the `BaseModel` class yet, and therefore whether it's
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/main.py:116:# the `BaseModel` class, since that's defined immediately after the metaclass.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/main.py:137:            if _is_base_model_class_defined and issubclass(base, BaseModel) and base != BaseModel:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/main.py:177:        if (namespace.get('__module__'), namespace.get('__qualname__')) != ('pydantic.main', 'BaseModel'):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/main.py:288:            # BaseModel's body (where annotations are set), so clear them manually:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/main.py:316:class BaseModel(Representation, metaclass=ModelMetaclass):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/main.py:383:                # - keep other values (e.g. submodels) untouched (using `BaseModel.dict()` will change them into dicts)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/main.py:495:        # because we want to be able to keep raw `BaseModel` instances and not as `dict`.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/main.py:496:        # This allows users to write custom JSON encoders for given `BaseModel` classes.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/main.py:516:            and not (isinstance(obj, BaseModel) and obj.__fields__.keys() == {ROOT_KEY})
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/main.py:746:        if isinstance(v, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/main.py:912:        if isinstance(other, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/main.py:938:) -> Type['BaseModel']:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/main.py:993:        __base__ = (cast(Type['Model'], BaseModel),)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/main.py:1037:    model: Type[BaseModel], input_data: 'DictStrAny', cls: 'ModelOrDc' = None
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:87:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:92:TypeModelOrEnum = Union[Type['BaseModel'], Type[Enum]]
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:110:    models: Sequence[Union[Type['BaseModel'], Type['Dataclass']]],
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:163:    model: Union[Type['BaseModel'], Type['Dataclass']],
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:172:    :param model: a Pydantic model (a class that inherits from BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:202:    # The behaviour is the same as `BaseModel` reference, where the default title
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:349:def get_flat_models_from_model(model: Type['BaseModel'], known_models: Optional[TypeModelSet] = None) -> TypeModelSet:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:352:    model ``Foo`` (subclass of Pydantic ``BaseModel``) as ``model``, and it has a field of type ``Bar`` (also
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:353:    subclass of ``BaseModel``) and that model ``Bar`` has a field of type ``Baz`` (also subclass of ``BaseModel``),
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:356:    :param model: a Pydantic ``BaseModel`` subclass
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:371:    Take a single Pydantic ``ModelField`` (from a model) that could have been declared as a subclass of BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:373:    I.e. if you pass a field that was declared to be of type ``Foo`` (subclass of BaseModel) as ``field``, and that
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:374:    model ``Foo`` has a field of type ``Bar`` (also subclass of ``BaseModel``) and that model ``Bar`` has a field of
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:375:    type ``Baz`` (also subclass of ``BaseModel``), the return value will be ``set([Foo, Bar, Baz])``.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:381:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:386:    if lenient_issubclass(getattr(field_type, '__pydantic_model__', None), BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:389:    if field.sub_fields and not lenient_issubclass(field_type, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:391:    elif lenient_issubclass(field_type, BaseModel) and field_type not in known_models:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:400:    Take a list of Pydantic  ``ModelField``s (from a model) that could have been declared as subclasses of ``BaseModel``
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:402:    I.e. if you pass a the fields of a model ``Foo`` (subclass of ``BaseModel``) as ``fields``, and on of them has a
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:403:    field of type ``Bar`` (also subclass of ``BaseModel``) and that model ``Bar`` has a field of type ``Baz`` (also
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:404:    subclass of ``BaseModel``), the return value will be ``set([Foo, Bar, Baz])``.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:416:def get_flat_models_from_models(models: Sequence[Type['BaseModel']]) -> TypeModelSet:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:419:    a list of two models, ``Foo`` and ``Bar``, both subclasses of Pydantic ``BaseModel`` as models, and ``Bar`` has
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:420:    a field of type ``Baz`` (also subclass of ``BaseModel``), the return value will be ``set([Foo, Bar, Baz])``.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:448:    from pydantic.v1.main import BaseModel  # noqa: F811
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:497:    elif field.shape == SHAPE_TUPLE or (field.shape == SHAPE_GENERIC and not issubclass(field.type_, BaseModel)):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:575:    model = cast(Type['BaseModel'], model)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:602:    model: Type['BaseModel'],
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:722:                # sub_field is either a `BaseModel` or directly an `Annotated` `Union` of many
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:841:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:848:    # BaseModel OR that BaseModel is a const
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:850:        (field.field_info and field.field_info.const) or not lenient_issubclass(field_type, BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:923:    if lenient_issubclass(getattr(field_type, '__pydantic_model__', None), BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:926:    if issubclass(field_type, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:977:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:979:    if isinstance(dft, BaseModel) or is_dataclass(dft):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/schema.py:1009:    :param validate_assignment: default False, flag for BaseModel Config value of validate_assignment
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/types.py:127:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/types.py:130:    ModelOrDc = Type[Union[BaseModel, Dataclass]]
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/utils.py:51:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/utils.py:169:                f'Field name "{field_name}" shadows a BaseModel attribute; '
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/utils.py:301:def get_model(obj: Union[Type['BaseModel'], Type['Dataclass']]) -> Type['BaseModel']:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/utils.py:302:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/utils.py:309:    if not issubclass(model_cls, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/utils.py:310:        raise TypeError('Unsupported type, must be either BaseModel or dataclass')
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/utils.py:762:    `tp` can be a `BaseModel` class or directly an `Annotated` `Union` of many.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/utils.py:790:            raise TypeError(f'Type {tp.__name__!r} is not a valid `BaseModel` or `dataclass`') from e
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/_hypothesis_plugin.py:234:        cls.inner_type.json if lenient_issubclass(inner_type, pydantic.BaseModel) else json.dumps,
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/json.py:75:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/json.py:77:    if isinstance(obj, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/dataclasses.py:6:a `BaseModel` and magic methods to trigger the validation of the data.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/dataclasses.py:59:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/dataclasses.py:76:        __pydantic_model__: ClassVar[Type[BaseModel]]
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/dataclasses.py:384:) -> Type['BaseModel']:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/dataclasses.py:407:    model: Type['BaseModel'] = create_model(
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/config.py:15:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/config.py:25:        def __call__(self, schema: Dict[str, Any], model_class: Type[BaseModel]) -> None:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/decorator.py:7:from pydantic.v1.main import BaseModel, create_model
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/decorator.py:128:    def init_model_instance(self, *args: Any, **kwargs: Any) -> BaseModel:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/decorator.py:179:    def execute(self, m: BaseModel) -> Any:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/decorator.py:226:        class DecoratorBaseModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/decorator.py:264:        self.model = create_model(to_camel(self.raw_function.__name__), __base__=DecoratorBaseModel, **fields)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/generics.py:27:from pydantic.v1.main import BaseModel, create_model
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/generics.py:46:    GenericTypesCache = WeakValueDictionary[CacheKey, Type[BaseModel]]
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/generics.py:47:    AssignedParameters = WeakKeyDictionary[Type[BaseModel], Parametrization]
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/generics.py:64:class GenericModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/generics.py:74:    # Setting the return type as Type[Any] instead of Type[BaseModel] prevents PyCharm warnings
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/mypy.py:80:BASEMODEL_FULLNAME = f'{_NAMESPACE}.main.BaseModel'
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/mypy.py:303:        Configures the BaseModel subclass according to the plugin settings.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/mypy.py:439:        for info in cls.info.mro[1:]:  # 0 is the current class, -2 is BaseModel, -1 is object
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/v1/mypy.py:496:        self_tvar_name = '_PydanticBaseModel'  # Make sure it does not conflict with other names in the class
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/type_adapter.py:23:from pydantic.main import BaseModel, IncEx
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/type_adapter.py:62:        return issubclass(type_, BaseModel) or is_dataclass(type_) or is_typeddict(type_)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/type_adapter.py:75:    A `TypeAdapter` instance exposes some of the functionality from `BaseModel` instance methods
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/type_adapter.py:87:                has its own config that cannot be overridden (ex: `BaseModel`, `TypedDict`, and `dataclass`). A
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/type_adapter.py:121:        Here, we collect some notes on namespace management, and subtle differences from `BaseModel`:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/type_adapter.py:123:        `BaseModel` uses its own `__module__` to find out where it was defined
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/type_adapter.py:154:        If `OuterDict` were a `BaseModel`, this would work because it would resolve
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/type_adapter.py:161:        `BaseModel`'s behavior isn't perfect either and _can_ break in similar ways,
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/type_adapter.py:164:        But at the very least this behavior is _subtly_ different from `BaseModel`'s.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/type_adapter.py:205:                'Cannot use `config` when the type is a BaseModel, dataclass or TypedDict.'
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/type_adapter.py:328:        if _utils.lenient_issubclass(type_, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/fields.py:107:        [`BaseModel`][pydantic.main.BaseModel] `.model_fields` internals.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/fields.py:282:            class MyModel(pydantic.BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/fields.py:299:        class MyModel(pydantic.BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/fields.py:313:        class MyModel(pydantic.BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/fields.py:382:        class MyModel(pydantic.BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/fields.py:1385:    from pydantic import BaseModel, computed_field
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/fields.py:1387:    class Rectangle(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/fields.py:1415:    from pydantic import BaseModel, computed_field
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/fields.py:1417:    class Square(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/fields.py:1453:    from pydantic import BaseModel, computed_field
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/fields.py:1455:    class Parent(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/fields.py:1478:    from pydantic import BaseModel, computed_field
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/fields.py:1480:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_mock_val_ser.py:13:    from ..main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_mock_val_ser.py:151:def set_model_mocks(cls: type[BaseModel], undefined_name: str = 'all referenced types') -> None:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_mock_val_ser.py:163:    def attempt_rebuild_fn(attr_fn: Callable[[type[BaseModel]], T]) -> Callable[[], T | None]:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:28:    from ..main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:59:GenericTypesCache = WeakValueDictionary[GenericTypesCacheKey, 'type[BaseModel]']
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:101:    origin: type[BaseModel] | None  # analogous to typing._GenericAlias.__origin__
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:107:    model_name: str, origin: type[BaseModel], args: tuple[Any, ...], params: tuple[Any, ...]
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:108:) -> type[BaseModel]:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:109:    """Dynamically create a submodel of a provided (generic) BaseModel.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:182:    since __parameters__ of (nested) generic BaseModel subclasses won't show up in that list.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:228:def get_model_typevars_map(cls: type[BaseModel]) -> dict[TypeVar, Any]:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:229:    """Package a generic BaseModel's typevars and concrete parametrization (if present) into a dictionary compatible
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:232:    Since BaseModel.__class_getitem__ does not produce a typing._GenericAlias, and the BaseModel generic info is
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:343:def map_generic_model_arguments(cls: type[BaseModel], args: tuple[Any, ...]) -> dict[TypeVar, Any]:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:351:        class Model[T, U, V = int](BaseModel): ...
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:401:    origin: type[BaseModel], args: tuple[Any, ...]
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:439:def get_cached_generic_type_early(parent: type[BaseModel], typevar_values: Any) -> type[BaseModel] | None:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:464:    parent: type[BaseModel], typevar_values: Any, origin: type[BaseModel], args: tuple[Any, ...]
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:465:) -> type[BaseModel] | None:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:480:    parent: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:482:    type_: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:483:    origin: type[BaseModel] | None = None,
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:526:def _early_cache_key(cls: type[BaseModel], typevar_values: Any) -> GenericTypesCacheKey:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:530:    inputs would ultimately result in the same type being created in BaseModel.__class_getitem__.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:538:def _late_cache_key(origin: type[BaseModel], args: tuple[Any, ...], typevar_values: Any) -> GenericTypesCacheKey:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generics.py:545:    # _early_cache_key, as that function will always produce a BaseModel subclass as the first item in the key,
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_decorators.py:431:        attributes in the namespace of the class (a BaseModel or dataclass)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_config.py:102:        """Build a new `ConfigWrapper` instance for a `BaseModel`.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_config.py:115:            A `ConfigWrapper` instance for `BaseModel`.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_utils.py:33:    from ..main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_utils.py:111:def is_model_class(cls: Any) -> TypeGuard[type[BaseModel]]:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_utils.py:112:    """Returns true if cls is a _proper_ subclass of BaseModel, and provides proper type-checking,
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_utils.py:115:    BaseModel = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_utils.py:117:    return lenient_issubclass(cls, BaseModel) and cls is not BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_utils.py:397:_ModelT = TypeVar('_ModelT', bound='BaseModel')
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_utils.py:404:    This decorator takes a class method defined on the `BaseModel` class and transforms it into
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_import_utils.py:5:    from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_import_utils.py:10:def import_cached_base_model() -> type['BaseModel']:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_import_utils.py:11:    from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_import_utils.py:13:    return BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_core_utils.py:170:    from pydantic import BaseModel, TypeAdapter
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_core_utils.py:173:    if (inspect.isclass(val) and issubclass(val, BaseModel)) or is_pydantic_dataclass(val):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_signature.py:86:    """Generate a mapping of parameter names to Parameter objects for a pydantic BaseModel or dataclass."""
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_signature.py:171:    """Generate signature for a pydantic BaseModel or dataclass.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_signature.py:181:        The dataclass/BaseModel subclass signature.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:107:    from ..main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:677:        # we can end up adding `BaseModel.__get_pydantic_json_schema__` multiple times
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:723:    def _model_schema(self, cls: type[BaseModel]) -> core_schema.CoreSchema:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:725:        BaseModel_ = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:746:                if cls.__pydantic_fields_complete__ or cls is BaseModel_:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:751:                        # class Base[T](BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:754:                        # class Other(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:819:                generic_origin: type[BaseModel] | None = getattr(cls, '__pydantic_generic_metadata__', {}).get('origin')
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:871:        BaseModel_ = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:875:            getattr(get_schema, '__func__', None) is BaseModel_.__get_pydantic_core_schema__.__func__  # pyright: ignore[reportFunctionMemberAccess]
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:880:            # BaseModel.__get_pydantic_core_schema__ is defined for backwards compatibility,
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:915:            from pydantic.v1 import BaseModel as BaseModelV1
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:917:            if issubclass(obj, BaseModelV1):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:934:        # or the equivalent for BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:935:        # class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:1000:        BaseModel = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:1002:        if lenient_issubclass(obj, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:2631:        BaseModel = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:2635:            and BaseModel.__get_pydantic_json_schema__.__func__  # type: ignore
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_typing_extra.py:30:    from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_typing_extra.py:293:    obj: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_namespace_utils.py:168:            from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_namespace_utils.py:173:                class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_fields.py:34:    from ..main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_fields.py:79:    cls: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_fields.py:95:        cls: BaseModel or dataclass.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_fields.py:109:    BaseModel = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_fields.py:143:                        if not (issubclass(b, BaseModel) and ann_name in getattr(b, '__pydantic_fields__', {})):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_fields.py:302:    cls: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:22:from ..warnings import GenericBeforeBaseModelWarning, PydanticDeprecatedSince20
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:44:    from ..main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:104:        # Note `ModelMetaclass` refers to `BaseModel`, but is also used to *create* `BaseModel`, so we rely on the fact
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:105:        # that `BaseModel` itself won't have any bases, but any subclass of it will, to determine whether the `__new__`
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:106:        # call we're in the middle of is for the `BaseModel` class.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:121:                    def wrapped_model_post_init(self: BaseModel, context: Any, /) -> None:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:135:            cls = cast('type[BaseModel]', super().__new__(mcs, cls_name, bases, namespace, **kwargs))
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:136:            BaseModel_ = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:139:            if Generic in mro and mro.index(Generic) < mro.index(BaseModel_):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:141:                    GenericBeforeBaseModelWarning(
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:142:                        'Classes should inherit from `BaseModel` before generic classes (e.g. `typing.Generic[T]`) '
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:150:                None if cls.model_post_init is BaseModel_.model_post_init else 'model_post_init'
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:250:            # only hit for _proper_ subclasses of BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:258:                    None,  # In case the metaclass is used with a class other than `BaseModel`.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:293:        BaseModel = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:299:            if issubclass(base, BaseModel) and base is not BaseModel:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:336:def init_private_attributes(self: BaseModel, context: Any, /) -> None:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:337:    """This function is meant to behave like a BaseModel method to initialise private attributes.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:342:        self: The BaseModel instance.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:359:    BaseModel = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:362:    if model_post_init is not BaseModel.model_post_init:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:502:def set_default_hash_func(cls: type[BaseModel], bases: tuple[type[Any], ...]) -> None:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:507:        # It will be `None` if not overridden from BaseModel.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:515:def make_hash_func(cls: type[BaseModel]) -> Any:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:532:    cls: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:539:        cls: BaseModel or dataclass.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:563:    cls: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:576:        cls: BaseModel or dataclass.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:625:        'create_model' if create_model_module else 'BaseModel',
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:648:def set_deprecated_descriptors(cls: type[BaseModel]) -> None:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:682:    def __set_name__(self, cls: type[BaseModel], name: str) -> None:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:685:    def __get__(self, obj: BaseModel | None, obj_type: type[BaseModel] | None = None) -> Any:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:699:    # as `BaseModel.__setattr__` is defined and takes priority.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/warnings.py:87:class GenericBeforeBaseModelWarning(Warning):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/__init__.py:117:    'BaseModel',
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/__init__.py:284:    'BaseModel': (__spec__.parent, '.main'),
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/json_schema.py:8:[`BaseModel.model_json_schema`][pydantic.BaseModel.model_json_schema] and
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/json_schema.py:64:    from .main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/json_schema.py:1484:        cls = cast('type[BaseModel]', schema['cls'])
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/json_schema.py:1506:        from .main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/json_schema.py:1519:        # BaseModel and dataclasses; don't use cls.__doc__ as it will contain the verbose class signature by default
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/json_schema.py:1520:        docstring = None if cls is BaseModel or dataclasses.is_dataclass(cls) else cls.__doc__
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/json_schema.py:1535:        if issubclass(cls, BaseModel) and cls.__pydantic_root_model__:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/json_schema.py:2037:        (e.g., int, float, str), and false for those that would (e.g., BaseModel subclasses).
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/json_schema.py:2380:    cls: type[BaseModel] | type[PydanticDataclass],
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/json_schema.py:2402:    from .main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/json_schema.py:2409:    if cls is BaseModel:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/json_schema.py:2410:        raise AttributeError('model_json_schema() must be called on a subclass of BaseModel, not BaseModel itself.')
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/json_schema.py:2417:    models: Sequence[tuple[type[BaseModel] | type[PydanticDataclass], JsonSchemaMode]],
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/json_schema.py:2424:) -> tuple[dict[tuple[type[BaseModel] | type[PydanticDataclass], JsonSchemaMode], JsonSchemaValue], JsonSchemaValue]:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/json_schema.py:2448:    inputs: list[tuple[type[BaseModel] | type[PydanticDataclass], JsonSchemaMode, CoreSchema]] = [
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/json_schema.py:2640:            from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/json_schema.py:2643:            class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_serializers.py:28:    from pydantic import BaseModel, PlainSerializer
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_serializers.py:34:    class StudentModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_serializers.py:99:    from pydantic import BaseModel, WrapSerializer
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_serializers.py:101:    class EventDatetime(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_serializers.py:118:    class EventModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_serializers.py:248:    from pydantic import BaseModel, field_serializer
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_serializers.py:250:    class StudentModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_serializers.py:367:    from pydantic import BaseModel, model_serializer
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_serializers.py:369:    class TemperatureModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/deprecated/copy_internals.py:17:    from .. import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/deprecated/copy_internals.py:22:    Model = typing.TypeVar('Model', bound='BaseModel')
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/deprecated/copy_internals.py:30:    self: BaseModel,
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/deprecated/copy_internals.py:125:    cls: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/deprecated/copy_internals.py:135:    from .. import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/deprecated/copy_internals.py:137:    if isinstance(v, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/deprecated/copy_internals.py:199:    self: BaseModel,
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/deprecated/json.py:94:    BaseModel = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/deprecated/json.py:96:    if isinstance(obj, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/deprecated/json.py:114:    '`custom_pydantic_encoder` is deprecated, use `BaseModel.model_dump` instead.',
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/deprecated/json.py:119:        '`custom_pydantic_encoder` is deprecated, use `BaseModel.model_dump` instead.',
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/deprecated/decorator.py:12:from ..main import BaseModel, create_model
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/deprecated/decorator.py:145:    def init_model_instance(self, *args: Any, **kwargs: Any) -> BaseModel:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/deprecated/decorator.py:196:    def execute(self, m: BaseModel) -> Any:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/deprecated/decorator.py:243:        class DecoratorBaseModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/deprecated/decorator.py:284:        self.model = create_model(to_pascal(self.raw_function.__name__), __base__=DecoratorBaseModel, **fields)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/_migration.py:13:    'pydantic.generics:GenericModel': 'pydantic.BaseModel',
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:3:# Because `dict` is in the local namespace of the `BaseModel` class, we use `Dict` for annotations.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:72:__all__ = 'BaseModel', 'create_model'
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:84:def _check_frozen(model_cls: type[BaseModel], name: str, value: Any) -> None:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:97:def _model_field_setattr_handler(model: BaseModel, name: str, val: Any) -> None:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:102:def _private_setattr_handler(model: BaseModel, name: str, val: Any) -> None:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:112:_SIMPLE_SETATTR_HANDLERS: Mapping[str, Callable[[BaseModel, str, Any], None]] = {
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:121:class BaseModel(metaclass=_model_construction.ModelMetaclass):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:179:    # Must be set for `GenerateSchema.model_schema` to work for a plain `BaseModel` annotation.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:208:    __pydantic_setattr_handlers__: ClassVar[Dict[str, Callable[[BaseModel, str, Any], None]]]  # noqa: UP006
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:224:        # Prevent `BaseModel` from being instantiated directly
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:227:            'Pydantic models should inherit from BaseModel, BaseModel cannot be instantiated directly',
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:231:            'Pydantic models should inherit from BaseModel, BaseModel cannot be instantiated directly',
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:236:            'Pydantic models should inherit from BaseModel, BaseModel cannot be instantiated directly',
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:322:                this is directly used for the [`model_fields_set`][pydantic.BaseModel.model_fields_set] attribute.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:563:        This method can be overridden to achieve a custom naming scheme for generic BaseModels.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:786:    def __get_pydantic_core_schema__(cls, source: type[BaseModel], handler: GetCoreSchemaHandler, /) -> CoreSchema:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:788:        # In the generate schema logic, this method (`BaseModel.__get_pydantic_core_schema__`) is special cased to
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:791:            'The `__get_pydantic_core_schema__` method of the `BaseModel` class is deprecated. If you are calling '
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:822:                Since this gets called by `BaseModel.model_json_schema` you can override the
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:852:    ) -> type[BaseModel] | _forward_ref.PydanticRecursiveRef:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:857:        if cls is BaseModel:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:858:            raise TypeError('Type parameters should be placed on typing.Generic, not BaseModel')
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:867:        # For a model `class Model[T, U, V = int](BaseModel): ...` parametrized with `(str, bool)`,
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:975:                # See `BaseModel.__repr_args__` for more details
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:1001:        def _setattr_handler(self, name: str, value: Any) -> Callable[[BaseModel, str, Any], None] | None:
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:1113:            if isinstance(other, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:1148:                # raises an error in BaseModel.__getattr__ instead of returning the class attribute
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:1154:                    # In rare cases (such as when using the deprecated BaseModel.copy() method),
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:1163:            # other instance is not a BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:1177:            from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:1179:            class MyModel(BaseModel, extra='allow'): ...
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:1454:        'See the docstring of `BaseModel.copy` for details about how to handle `include` and `exclude`.',
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:1489:            'See the docstring of `BaseModel.copy` for details about how to handle `include` and `exclude`.',
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:1646:ModelT = TypeVar('ModelT', bound=BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:1661:) -> type[BaseModel]: ...
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:1696:    subclass of [`BaseModel`][pydantic.BaseModel].
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:1716:        The new [model][pydantic.BaseModel].
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/main.py:1722:        __base__ = (cast('type[ModelT]', BaseModel),)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/plugin/__init__.py:35:SchemaKind: TypeAlias = Literal['BaseModel', 'TypeAdapter', 'dataclass', 'create_model', 'validate_call']
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:172:            from pydantic import BaseModel, conint
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:174:            class Foo(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:182:            from pydantic import BaseModel, Field
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:184:            class Foo(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:202:    from pydantic import BaseModel, ValidationError, conint
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:204:    class ConstrainedExample(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:242:from pydantic import BaseModel, PositiveInt, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:244:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:273:from pydantic import BaseModel, NegativeInt, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:275:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:304:from pydantic import BaseModel, NonPositiveInt, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:306:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:335:from pydantic import BaseModel, NonNegativeInt, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:337:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:366:from pydantic import BaseModel, StrictInt, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:368:class StrictIntModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:433:            from pydantic import BaseModel, confloat
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:435:            class Foo(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:443:            from pydantic import BaseModel, Field
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:445:            class Foo(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:464:    from pydantic import BaseModel, ValidationError, confloat
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:466:    class ConstrainedExample(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:504:from pydantic import BaseModel, PositiveFloat, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:506:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:535:from pydantic import BaseModel, NegativeFloat, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:537:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:566:from pydantic import BaseModel, NonPositiveFloat, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:568:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:597:from pydantic import BaseModel, NonNegativeFloat, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:599:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:628:from pydantic import BaseModel, StrictFloat, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:630:class StrictFloatModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:648:from pydantic import BaseModel, FiniteFloat
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:650:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:771:            from pydantic import BaseModel, constr
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:773:            class Foo(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:781:            from pydantic import BaseModel, StringConstraints
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:783:            class Foo(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:795:    from pydantic import BaseModel, constr
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:797:    class Foo(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:927:        from pydantic import BaseModel, Field, ImportString, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:929:        class ImportThings(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:957:        class ImportThingsDefaultPyObj(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:961:        class ImportThingsDefaultString(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:969:        class ImportThingsMissingValidateDefault(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:979:        from pydantic import BaseModel, ImportString
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:981:        class ImportThings(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1065:            from pydantic import BaseModel, condecimal
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1067:            class Foo(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1076:            from pydantic import BaseModel, Field
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1078:            class Foo(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1098:    from pydantic import BaseModel, ValidationError, condecimal
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1100:    class ConstrainedExample(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1189:from pydantic import UUID1, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1191:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1203:from pydantic import UUID3, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1205:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1217:from pydantic import UUID4, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1219:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1231:from pydantic import UUID5, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1233:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1245:from pydantic import UUID6, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1247:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1259:from pydantic import UUID7, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1261:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1273:from pydantic import UUID8, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1275:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1350:from pydantic import BaseModel, FilePath, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1352:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1392:from pydantic import BaseModel, DirectoryPath, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1394:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1451:        from pydantic import BaseModel, Json, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1453:        class AnyJsonModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1456:        class ConstrainedJsonModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1501:        from pydantic import BaseModel, Json
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1503:        class ConstrainedJsonModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1586:    from pydantic import BaseModel, Secret
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1590:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1609:    from pydantic import BaseModel, Secret
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1615:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1637:    from pydantic import BaseModel, Field, Secret, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1641:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1813:    from pydantic import BaseModel, SecretStr
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1815:    class User(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1836:    from pydantic import BaseModel, SecretBytes, SecretStr, field_serializer
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1838:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1881:    from pydantic import BaseModel, SecretBytes
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:1883:    class User(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2044:    from pydantic import BaseModel, ByteSize
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2046:    class MyModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2485:    from pydantic import BaseModel, EncodedBytes, EncoderProtocol, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2504:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2584:    from pydantic import BaseModel, EncodedStr, EncoderProtocol, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2603:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2724:from pydantic import Base64Bytes, BaseModel, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2726:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2771:from pydantic import Base64Str, BaseModel, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2773:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2810:from pydantic import Base64UrlBytes, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2812:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2831:from pydantic import Base64UrlStr, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2833:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2861:    from pydantic import BaseModel, GetPydanticSchema
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2865:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2911:    from pydantic import BaseModel, Discriminator, Tag
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2913:    class Pie(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2928:    class ThanksgivingDinner(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:2998:    from pydantic import BaseModel, Discriminator, Tag
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:3000:    class Pie(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:3015:    class ThanksgivingDinner(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:3189:    from pydantic import BaseModel, JsonValue, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:3191:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:3267:    from pydantic import BaseModel, FailFast, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/types.py:3269:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/networks.py:577:    from pydantic import BaseModel, HttpUrl, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/networks.py:579:    class MyModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/networks.py:614:    from pydantic import BaseModel, HttpUrl
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/networks.py:616:    class MyModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/networks.py:702:        BaseModel,
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/networks.py:709:    class MyModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/networks.py:724:    class MyDatabaseModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/networks.py:970:        from pydantic import BaseModel, EmailStr
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/networks.py:972:        class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/networks.py:1019:    from pydantic import BaseModel, NameEmail
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/networks.py:1021:    class User(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/networks.py:1105:        from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/networks.py:1108:        class IpModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/dataclasses.py:323:    This is analogous to `BaseModel.model_rebuild`.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/root_model.py:12:from .main import BaseModel, _object_setattr
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/root_model.py:35:class RootModel(BaseModel, typing.Generic[RootModelRootType], metaclass=_RootModelMetaclass):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/root_model.py:39:    A Pydantic `BaseModel` for the root object of the model.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/root_model.py:139:            See the documentation of `BaseModel.model_dump` for more details about the arguments.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/root_model.py:142:            not a `BaseModel` subclass. If `RootModelRootType` is a `BaseModel` subclass, then the return
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:71:      from pydantic import BaseModel, ConfigDict
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:73:      class User(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:89:      from pydantic import BaseModel, ConfigDict, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:92:      class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:111:      from pydantic import BaseModel, ConfigDict
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:114:      class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:126:      from pydantic import BaseModel, ConfigDict, Field, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:129:      class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:186:        from pydantic import BaseModel, ConfigDict, Field
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:188:        class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:221:    from pydantic import BaseModel, ConfigDict, Field
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:228:    class SomeModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:255:    from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:257:    class User(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:274:    from pydantic import BaseModel, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:276:    class User(BaseModel, validate_assignment=True):  # (1)!
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:303:    from pydantic import BaseModel, ConfigDict, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:310:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:375:    from pydantic import BaseModel, ConfigDict
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:378:    class Voice(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:395:    from pydantic import AliasGenerator, BaseModel, ConfigDict
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:398:    class Athlete(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:456:    from pydantic import BaseModel, ConfigDict
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:458:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:484:    from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:486:    class User(BaseModel, revalidate_instances='never'):  # (1)!
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:492:    class Transaction(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:519:    from pydantic import BaseModel, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:521:    class User(BaseModel, revalidate_instances='always'):  # (1)!
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:527:    class Transaction(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:560:    from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:562:    class User(BaseModel, revalidate_instances='subclass-instances'):  # (1)!
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:568:    class Transaction(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:648:    prevent collisions between model attributes and `BaseModel`'s own methods. This was changed
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:657:    from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:663:        class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:681:    from pydantic import BaseModel, ConfigDict
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:686:        class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:714:    from pydantic import BaseModel, ConfigDict
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:718:        class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:726:        Field "model_validate" conflicts with member <bound method BaseModel.model_validate of <class 'pydantic.main.BaseModel'>> of protected namespace "model_".
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:738:    from pydantic import BaseModel, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:740:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:757:    from pydantic import BaseModel, ConfigDict, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:759:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:781:    [`Model.model_rebuild(_types_namespace=...)`][pydantic.BaseModel.model_rebuild].
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:811:    from pydantic import BaseModel, ConfigDict
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:813:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:854:    from pydantic import BaseModel, ConfigDict, Json
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:856:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:902:    from pydantic import BaseModel, ConfigDict, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:904:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:917:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:946:    from pydantic import BaseModel, ConfigDict, Field, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:948:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:987:    from pydantic import BaseModel, ConfigDict, Field
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:990:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:1049:    from pydantic import BaseModel, ConfigDict, Field
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:1051:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:1087:    from pydantic import BaseModel, ConfigDict, Field
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:1089:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:1124:    from pydantic import BaseModel, ConfigDict, Field
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/config.py:1126:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/mypy.py:84:BASEMODEL_FULLNAME = 'pydantic.main.BaseModel'
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/mypy.py:423:    """Transform the BaseModel subclass according to the plugin settings.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/mypy.py:454:        """Configures the BaseModel subclass according to the plugin settings.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/mypy.py:524:        # Handle `class MyModel(BaseModel, <name>=<expr>, ...):`
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/mypy.py:609:        for info in reversed(cls.info.mro[1:-1]):  # 0 is the current class, -2 is BaseModel, -1 is object
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/mypy.py:631:                        'BaseModel field may only be overridden by another field',
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/mypy.py:736:                'Type aliases inside BaseModel definitions are not supported at runtime',
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/mypy.py:755:        # x: InitVar[int] is not supported in BaseModel
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/mypy.py:759:                'InitVar is not supported in BaseModel',
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/mypy.py:779:                    'Need type argument for Final[...] with non-literal default in BaseModel',
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/mypy.py:1342:    # signature incompatible with the superclass, which causes mypy errors to occur for every subclass of BaseModel.
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_validators.py:41:        from pydantic import AfterValidator, BaseModel, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_validators.py:45:        class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_validators.py:104:        from pydantic import BaseModel, BeforeValidator
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_validators.py:108:        class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_validators.py:177:        from pydantic import BaseModel, PlainValidator
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_validators.py:186:        class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_validators.py:269:    from pydantic import BaseModel, ValidationError, WrapValidator
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_validators.py:283:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_validators.py:425:        BaseModel,
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_validators.py:430:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_validators.py:682:    from pydantic import BaseModel, ValidationError, model_validator
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_validators.py:684:    class Square(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_validators.py:742:            from pydantic import BaseModel, InstanceOf
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/pydantic/functional_validators.py:747:            class Bar(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/base.py:12:from pydantic import AliasChoices, AliasPath, BaseModel, TypeAdapter
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/base.py:370:            class SubSubSub(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/base.py:373:            class SubSub(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/base.py:377:            class Sub(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/base.py:432:                and _lenient_issubclass(sub_model_field.annotation, BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/base.py:504:                    # and _lenient_issubclass(field.annotation, BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:38:from pydantic import BaseModel, Field
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:77:class CliMutuallyExclusiveGroup(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:502:    def _get_sub_models(self, model: type[BaseModel], field_name: str, field_info: FieldInfo) -> list[type[BaseModel]]:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:509:        sub_models: list[type[BaseModel]] = []
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:519:    def _verify_cli_flag_annotations(self, model: type[BaseModel], field_name: str, field_info: FieldInfo) -> None:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:530:    def _sort_arg_fields(self, model: type[BaseModel]) -> list[tuple[str, FieldInfo]]:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:545:                                f'subcommand argument {model.__name__}.{field_name} has type not derived from BaseModel'
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:681:        model: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:702:            sub_models: list[type[BaseModel]] = self._get_sub_models(model, field_name, field_info)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:894:        model: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/providers/cli.py:895:        sub_models: list[type[BaseModel]],
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/types.py:11:    from pydantic.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/types.py:13:    PydanticModel = TypeVar('PydanticModel', bound=Union[PydanticDataclass, BaseModel])
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/utils.py:11:from pydantic import BaseModel, Json, RootModel, Secret
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/utils.py:79:        annotation, (BaseModel, Mapping, Sequence, tuple, set, frozenset, deque)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/sources/utils.py:135:    raise SettingsError(f'Error: {model_cls.__name__} is not subclass of BaseModel or pydantic.dataclasses.dataclass')
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/main.py:16:from pydantic.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/main.py:108:class BaseSettings(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/main.py:476:    A utility class for running Pydantic `BaseSettings`, `BaseModel`, or `pydantic.dataclasses.dataclass` as
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/main.py:536:        Runs a Pydantic `BaseSettings`, `BaseModel`, or `pydantic.dataclasses.dataclass` as a CLI application.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/main.py:555:            SettingsError: If model_cls is not subclass of `BaseModel` or `pydantic.dataclasses.dataclass`.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic_settings/main.py:561:                f'Error: {model_cls.__name__} is not subclass of BaseModel or pydantic.dataclasses.dataclass'
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/ultralytics/nn/__init__.py:4:    BaseModel,
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/ultralytics/nn/__init__.py:26:    "BaseModel",
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/ultralytics/nn/tasks.py:97:class BaseModel(torch.nn.Module):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/ultralytics/nn/tasks.py:118:        Create a BaseModel instance
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/ultralytics/nn/tasks.py:119:        >>> model = BaseModel()
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/ultralytics/nn/tasks.py:288:            (BaseModel): An updated BaseModel object.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/ultralytics/nn/tasks.py:342:        """Initialize the loss criterion for the BaseModel."""
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/ultralytics/nn/tasks.py:346:class DetectionModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/ultralytics/nn/tasks.py:614:class ClassificationModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/polars/_utils/construction/utils.py:59:    """Check if value derives from a pydantic.BaseModel."""
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/polars/_utils/construction/utils.py:60:    return _check_for_pydantic(value) and isinstance(value, pydantic.BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/utils.py:35:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/utils.py:119:        if lenient_issubclass(first_field.type_, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:13:from pydantic import AnyUrl, BaseModel, Field
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:58:class BaseModelWithConfig(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:68:class Contact(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:74:class License(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:80:class Info(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:90:class ServerVariable(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:96:class Server(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:102:class Reference(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:106:class Discriminator(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:111:class XML(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:119:class ExternalDocumentation(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:130:class Schema(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:244:class Encoding(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:252:class MediaType(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:259:class ParameterBase(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:283:class RequestBody(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:289:class Link(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:298:class Response(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:305:class Operation(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:321:class PathItem(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:344:class SecurityBase(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:371:class OAuthFlow(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:393:class OAuthFlows(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:415:class Components(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:429:class Tag(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/openapi/models.py:435:class OpenAPI(BaseModelWithConfig):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/applications.py:794:                from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/applications.py:796:                class Item(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/applications.py:2200:        from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/applications.py:2202:        class Item(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/applications.py:2578:        from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/applications.py:2580:        class Item(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/applications.py:4075:        from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/applications.py:4077:        class Item(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/encoders.py:21:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/encoders.py:216:    if isinstance(obj, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/security/http.py:6:from fastapi.openapi.models import HTTPBase as HTTPBaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/security/http.py:10:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/security/http.py:16:class HTTPBasicCredentials(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/security/http.py:29:class HTTPAuthorizationCredentials(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/security/http.py:78:        self.model = HTTPBaseModel(scheme=scheme, description=description)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/security/http.py:182:        self.model = HTTPBaseModel(scheme="basic", description=description)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/security/http.py:399:        self.model = HTTPBaseModel(scheme="digest", description=description)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/security/base.py:1:from fastapi.openapi.models import SecurityBase as SecurityBaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/security/base.py:5:    model: SecurityBaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/routing.py:60:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/routing.py:92:    if isinstance(res, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/routing.py:2089:        from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/routing.py:2091:        class Item(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/routing.py:2471:        from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/routing.py:2473:        class Item(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/routing.py:3607:        from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/routing.py:3609:        class Item(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/routing.py:3989:        from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/routing.py:3991:        class Item(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/routing.py:4371:        from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/routing.py:4373:        class Item(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/exceptions.py:3:from pydantic import BaseModel, create_model
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/exceptions.py:139:RequestErrorModel: Type[BaseModel] = create_model("Request")
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/exceptions.py:140:WebSocketErrorModel: Type[BaseModel] = create_model("WebSocket")
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/types.py:5:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/types.py:9:ModelNameMap = Dict[Union[Type[BaseModel], Type[Enum]], str]
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/utils.py:29:from pydantic import BaseModel, create_model
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/utils.py:37:_CLONED_TYPES_CACHE: MutableMapping[Type[BaseModel], Type[BaseModel]] = (
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/utils.py:112:    cloned_types: Optional[MutableMapping[Type[BaseModel], Type[BaseModel]]] = None,
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/utils.py:125:    if lenient_issubclass(original_type, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/utils.py:126:        original_type = cast(Type[BaseModel], original_type)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/_compat.py:24:from pydantic import BaseModel, create_model
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/_compat.py:176:    def _model_rebuild(model: Type[BaseModel]) -> None:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/_compat.py:180:        model: BaseModel, mode: Literal["json", "python"] = "json", **kwargs: Any
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/_compat.py:184:    def _get_model_config(model: BaseModel) -> Any:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/_compat.py:284:    ) -> Type[BaseModel]:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/_compat.py:286:        BodyModel: Type[BaseModel] = create_model(model_name, **field_params)  # type: ignore[call-overload]
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/_compat.py:289:    def get_model_fields(model: Type[BaseModel]) -> List[ModelField]:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/_compat.py:386:        flat_models: Set[Union[Type[BaseModel], Type[Enum]]],
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/_compat.py:387:        model_name_map: Dict[Union[Type[BaseModel], Type[Enum]], str],
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/_compat.py:408:            and not lenient_issubclass(field.type_, BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/_compat.py:425:            field.type_, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/_compat.py:450:    def _model_rebuild(model: Type[BaseModel]) -> None:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/_compat.py:454:        model: BaseModel, mode: Literal["json", "python"] = "json", **kwargs: Any
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/_compat.py:458:    def _get_model_config(model: BaseModel) -> Any:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/_compat.py:525:    ) -> Type[BaseModel]:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/_compat.py:531:    def get_model_fields(model: Type[BaseModel]) -> List[ModelField]:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/_compat.py:570:        lenient_issubclass(annotation, (BaseModel, Mapping, UploadFile))
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/_compat.py:664:def get_cached_model_fields(model: Type[BaseModel]) -> List[ModelField]:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/dependencies/utils.py:61:from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/dependencies/utils.py:222:    if len(fields) == 1 and lenient_issubclass(first_field.type_, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/dependencies/utils.py:513:                    lenient_issubclass(field.type_, BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/dependencies/utils.py:762:    if len(fields) == 1 and lenient_issubclass(first_field.type_, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/dependencies/utils.py:828:    """Check if field type is a Union where all members are BaseModel subclasses."""
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/dependencies/utils.py:840:        if not lenient_issubclass(arg, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/dependencies/utils.py:859:    # If it's a Form (or File) field, it has to be a BaseModel (or a union of BaseModels) to be top level
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/dependencies/utils.py:863:        and not lenient_issubclass(first_field.type_, BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/dependencies/utils.py:928:        and lenient_issubclass(first_field.type_, BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/env_settings.py:8:from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/env_settings.py:23:class BaseSettings(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/fields.py:293:      assigned on an instance.  The BaseModel Config must set validate_assignment to True
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/fields.py:1118:                # BaseModel or dataclass
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/fields.py:1163:        from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/fields.py:1168:            or lenient_issubclass(self.type_, (BaseModel, list, set, frozenset, dict))
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/__init__.py:45:    'BaseModel',
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/annotated_types.py:5:from pydantic.v1.main import BaseModel, create_model
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/annotated_types.py:26:) -> Type['BaseModel']:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/annotated_types.py:28:    Create a `BaseModel` based on the fields of a `TypedDict`.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/annotated_types.py:58:def create_model_from_namedtuple(namedtuple_cls: Type['NamedTuple'], **kwargs: Any) -> Type['BaseModel']:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/annotated_types.py:60:    Create a `BaseModel` based on the fields of a named tuple.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/main.py:90:    Model = TypeVar('Model', bound='BaseModel')
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/main.py:92:__all__ = 'BaseModel', 'create_model', 'validate_model'
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/main.py:111:# When creating a `BaseModel` instance, we bypass all the methods, properties... added to the model
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/main.py:113:# Note `ModelMetaclass` refers to `BaseModel`, but is also used to *create* `BaseModel`, so we need to add this extra
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/main.py:114:# (somewhat hacky) boolean to keep track of whether we've created the `BaseModel` class yet, and therefore whether it's
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/main.py:116:# the `BaseModel` class, since that's defined immediately after the metaclass.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/main.py:137:            if _is_base_model_class_defined and issubclass(base, BaseModel) and base != BaseModel:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/main.py:177:        if (namespace.get('__module__'), namespace.get('__qualname__')) != ('pydantic.main', 'BaseModel'):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/main.py:288:            # BaseModel's body (where annotations are set), so clear them manually:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/main.py:316:class BaseModel(Representation, metaclass=ModelMetaclass):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/main.py:383:                # - keep other values (e.g. submodels) untouched (using `BaseModel.dict()` will change them into dicts)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/main.py:495:        # because we want to be able to keep raw `BaseModel` instances and not as `dict`.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/main.py:496:        # This allows users to write custom JSON encoders for given `BaseModel` classes.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/main.py:516:            and not (isinstance(obj, BaseModel) and obj.__fields__.keys() == {ROOT_KEY})
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/main.py:746:        if isinstance(v, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/main.py:912:        if isinstance(other, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/main.py:938:) -> Type['BaseModel']:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/main.py:993:        __base__ = (cast(Type['Model'], BaseModel),)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/main.py:1037:    model: Type[BaseModel], input_data: 'DictStrAny', cls: 'ModelOrDc' = None
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:87:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:92:TypeModelOrEnum = Union[Type['BaseModel'], Type[Enum]]
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:110:    models: Sequence[Union[Type['BaseModel'], Type['Dataclass']]],
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:163:    model: Union[Type['BaseModel'], Type['Dataclass']],
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:172:    :param model: a Pydantic model (a class that inherits from BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:202:    # The behaviour is the same as `BaseModel` reference, where the default title
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:349:def get_flat_models_from_model(model: Type['BaseModel'], known_models: Optional[TypeModelSet] = None) -> TypeModelSet:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:352:    model ``Foo`` (subclass of Pydantic ``BaseModel``) as ``model``, and it has a field of type ``Bar`` (also
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:353:    subclass of ``BaseModel``) and that model ``Bar`` has a field of type ``Baz`` (also subclass of ``BaseModel``),
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:356:    :param model: a Pydantic ``BaseModel`` subclass
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:371:    Take a single Pydantic ``ModelField`` (from a model) that could have been declared as a subclass of BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:373:    I.e. if you pass a field that was declared to be of type ``Foo`` (subclass of BaseModel) as ``field``, and that
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:374:    model ``Foo`` has a field of type ``Bar`` (also subclass of ``BaseModel``) and that model ``Bar`` has a field of
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:375:    type ``Baz`` (also subclass of ``BaseModel``), the return value will be ``set([Foo, Bar, Baz])``.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:381:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:386:    if lenient_issubclass(getattr(field_type, '__pydantic_model__', None), BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:389:    if field.sub_fields and not lenient_issubclass(field_type, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:391:    elif lenient_issubclass(field_type, BaseModel) and field_type not in known_models:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:400:    Take a list of Pydantic  ``ModelField``s (from a model) that could have been declared as subclasses of ``BaseModel``
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:402:    I.e. if you pass a the fields of a model ``Foo`` (subclass of ``BaseModel``) as ``fields``, and on of them has a
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:403:    field of type ``Bar`` (also subclass of ``BaseModel``) and that model ``Bar`` has a field of type ``Baz`` (also
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:404:    subclass of ``BaseModel``), the return value will be ``set([Foo, Bar, Baz])``.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:416:def get_flat_models_from_models(models: Sequence[Type['BaseModel']]) -> TypeModelSet:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:419:    a list of two models, ``Foo`` and ``Bar``, both subclasses of Pydantic ``BaseModel`` as models, and ``Bar`` has
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:420:    a field of type ``Baz`` (also subclass of ``BaseModel``), the return value will be ``set([Foo, Bar, Baz])``.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:448:    from pydantic.v1.main import BaseModel  # noqa: F811
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:497:    elif field.shape == SHAPE_TUPLE or (field.shape == SHAPE_GENERIC and not issubclass(field.type_, BaseModel)):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:575:    model = cast(Type['BaseModel'], model)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:602:    model: Type['BaseModel'],
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:722:                # sub_field is either a `BaseModel` or directly an `Annotated` `Union` of many
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:841:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:848:    # BaseModel OR that BaseModel is a const
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:850:        (field.field_info and field.field_info.const) or not lenient_issubclass(field_type, BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:923:    if lenient_issubclass(getattr(field_type, '__pydantic_model__', None), BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:926:    if issubclass(field_type, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:977:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:979:    if isinstance(dft, BaseModel) or is_dataclass(dft):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/schema.py:1009:    :param validate_assignment: default False, flag for BaseModel Config value of validate_assignment
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/types.py:127:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/types.py:130:    ModelOrDc = Type[Union[BaseModel, Dataclass]]
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/utils.py:51:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/utils.py:169:                f'Field name "{field_name}" shadows a BaseModel attribute; '
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/utils.py:301:def get_model(obj: Union[Type['BaseModel'], Type['Dataclass']]) -> Type['BaseModel']:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/utils.py:302:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/utils.py:309:    if not issubclass(model_cls, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/utils.py:310:        raise TypeError('Unsupported type, must be either BaseModel or dataclass')
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/utils.py:762:    `tp` can be a `BaseModel` class or directly an `Annotated` `Union` of many.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/utils.py:790:            raise TypeError(f'Type {tp.__name__!r} is not a valid `BaseModel` or `dataclass`') from e
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/_hypothesis_plugin.py:234:        cls.inner_type.json if lenient_issubclass(inner_type, pydantic.BaseModel) else json.dumps,
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/json.py:75:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/json.py:77:    if isinstance(obj, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/dataclasses.py:6:a `BaseModel` and magic methods to trigger the validation of the data.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/dataclasses.py:59:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/dataclasses.py:76:        __pydantic_model__: ClassVar[Type[BaseModel]]
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/dataclasses.py:384:) -> Type['BaseModel']:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/dataclasses.py:407:    model: Type['BaseModel'] = create_model(
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/config.py:15:    from pydantic.v1.main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/config.py:25:        def __call__(self, schema: Dict[str, Any], model_class: Type[BaseModel]) -> None:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/decorator.py:7:from pydantic.v1.main import BaseModel, create_model
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/decorator.py:128:    def init_model_instance(self, *args: Any, **kwargs: Any) -> BaseModel:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/decorator.py:179:    def execute(self, m: BaseModel) -> Any:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/decorator.py:226:        class DecoratorBaseModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/decorator.py:264:        self.model = create_model(to_camel(self.raw_function.__name__), __base__=DecoratorBaseModel, **fields)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/generics.py:27:from pydantic.v1.main import BaseModel, create_model
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/generics.py:46:    GenericTypesCache = WeakValueDictionary[CacheKey, Type[BaseModel]]
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/generics.py:47:    AssignedParameters = WeakKeyDictionary[Type[BaseModel], Parametrization]
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/generics.py:64:class GenericModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/generics.py:74:    # Setting the return type as Type[Any] instead of Type[BaseModel] prevents PyCharm warnings
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/mypy.py:80:BASEMODEL_FULLNAME = f'{_NAMESPACE}.main.BaseModel'
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/mypy.py:303:        Configures the BaseModel subclass according to the plugin settings.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/mypy.py:439:        for info in cls.info.mro[1:]:  # 0 is the current class, -2 is BaseModel, -1 is object
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/v1/mypy.py:496:        self_tvar_name = '_PydanticBaseModel'  # Make sure it does not conflict with other names in the class
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/type_adapter.py:23:from pydantic.main import BaseModel, IncEx
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/type_adapter.py:62:        return issubclass(type_, BaseModel) or is_dataclass(type_) or is_typeddict(type_)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/type_adapter.py:75:    A `TypeAdapter` instance exposes some of the functionality from `BaseModel` instance methods
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/type_adapter.py:87:                has its own config that cannot be overridden (ex: `BaseModel`, `TypedDict`, and `dataclass`). A
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/type_adapter.py:121:        Here, we collect some notes on namespace management, and subtle differences from `BaseModel`:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/type_adapter.py:123:        `BaseModel` uses its own `__module__` to find out where it was defined
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/type_adapter.py:154:        If `OuterDict` were a `BaseModel`, this would work because it would resolve
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/type_adapter.py:161:        `BaseModel`'s behavior isn't perfect either and _can_ break in similar ways,
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/type_adapter.py:164:        But at the very least this behavior is _subtly_ different from `BaseModel`'s.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/type_adapter.py:205:                'Cannot use `config` when the type is a BaseModel, dataclass or TypedDict.'
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/type_adapter.py:328:        if _utils.lenient_issubclass(type_, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/fields.py:107:        [`BaseModel`][pydantic.main.BaseModel] `.model_fields` internals.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/fields.py:282:            class MyModel(pydantic.BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/fields.py:299:        class MyModel(pydantic.BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/fields.py:313:        class MyModel(pydantic.BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/fields.py:382:        class MyModel(pydantic.BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/fields.py:1385:    from pydantic import BaseModel, computed_field
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/fields.py:1387:    class Rectangle(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/fields.py:1415:    from pydantic import BaseModel, computed_field
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/fields.py:1417:    class Square(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/fields.py:1453:    from pydantic import BaseModel, computed_field
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/fields.py:1455:    class Parent(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/fields.py:1478:    from pydantic import BaseModel, computed_field
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/fields.py:1480:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_mock_val_ser.py:13:    from ..main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_mock_val_ser.py:151:def set_model_mocks(cls: type[BaseModel], undefined_name: str = 'all referenced types') -> None:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_mock_val_ser.py:163:    def attempt_rebuild_fn(attr_fn: Callable[[type[BaseModel]], T]) -> Callable[[], T | None]:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:28:    from ..main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:59:GenericTypesCache = WeakValueDictionary[GenericTypesCacheKey, 'type[BaseModel]']
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:101:    origin: type[BaseModel] | None  # analogous to typing._GenericAlias.__origin__
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:107:    model_name: str, origin: type[BaseModel], args: tuple[Any, ...], params: tuple[Any, ...]
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:108:) -> type[BaseModel]:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:109:    """Dynamically create a submodel of a provided (generic) BaseModel.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:182:    since __parameters__ of (nested) generic BaseModel subclasses won't show up in that list.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:228:def get_model_typevars_map(cls: type[BaseModel]) -> dict[TypeVar, Any]:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:229:    """Package a generic BaseModel's typevars and concrete parametrization (if present) into a dictionary compatible
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:232:    Since BaseModel.__class_getitem__ does not produce a typing._GenericAlias, and the BaseModel generic info is
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:343:def map_generic_model_arguments(cls: type[BaseModel], args: tuple[Any, ...]) -> dict[TypeVar, Any]:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:351:        class Model[T, U, V = int](BaseModel): ...
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:401:    origin: type[BaseModel], args: tuple[Any, ...]
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:439:def get_cached_generic_type_early(parent: type[BaseModel], typevar_values: Any) -> type[BaseModel] | None:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:464:    parent: type[BaseModel], typevar_values: Any, origin: type[BaseModel], args: tuple[Any, ...]
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:465:) -> type[BaseModel] | None:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:480:    parent: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:482:    type_: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:483:    origin: type[BaseModel] | None = None,
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:526:def _early_cache_key(cls: type[BaseModel], typevar_values: Any) -> GenericTypesCacheKey:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:530:    inputs would ultimately result in the same type being created in BaseModel.__class_getitem__.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:538:def _late_cache_key(origin: type[BaseModel], args: tuple[Any, ...], typevar_values: Any) -> GenericTypesCacheKey:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generics.py:545:    # _early_cache_key, as that function will always produce a BaseModel subclass as the first item in the key,
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_decorators.py:431:        attributes in the namespace of the class (a BaseModel or dataclass)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_config.py:102:        """Build a new `ConfigWrapper` instance for a `BaseModel`.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_config.py:115:            A `ConfigWrapper` instance for `BaseModel`.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_utils.py:33:    from ..main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_utils.py:111:def is_model_class(cls: Any) -> TypeGuard[type[BaseModel]]:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_utils.py:112:    """Returns true if cls is a _proper_ subclass of BaseModel, and provides proper type-checking,
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_utils.py:115:    BaseModel = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_utils.py:117:    return lenient_issubclass(cls, BaseModel) and cls is not BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_utils.py:397:_ModelT = TypeVar('_ModelT', bound='BaseModel')
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_utils.py:404:    This decorator takes a class method defined on the `BaseModel` class and transforms it into
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_import_utils.py:5:    from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_import_utils.py:10:def import_cached_base_model() -> type['BaseModel']:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_import_utils.py:11:    from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_import_utils.py:13:    return BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_core_utils.py:170:    from pydantic import BaseModel, TypeAdapter
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_core_utils.py:173:    if (inspect.isclass(val) and issubclass(val, BaseModel)) or is_pydantic_dataclass(val):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_signature.py:86:    """Generate a mapping of parameter names to Parameter objects for a pydantic BaseModel or dataclass."""
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_signature.py:171:    """Generate signature for a pydantic BaseModel or dataclass.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_signature.py:181:        The dataclass/BaseModel subclass signature.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generate_schema.py:107:    from ..main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generate_schema.py:677:        # we can end up adding `BaseModel.__get_pydantic_json_schema__` multiple times
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generate_schema.py:723:    def _model_schema(self, cls: type[BaseModel]) -> core_schema.CoreSchema:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generate_schema.py:725:        BaseModel_ = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generate_schema.py:746:                if cls.__pydantic_fields_complete__ or cls is BaseModel_:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generate_schema.py:751:                        # class Base[T](BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generate_schema.py:754:                        # class Other(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generate_schema.py:819:                generic_origin: type[BaseModel] | None = getattr(cls, '__pydantic_generic_metadata__', {}).get('origin')
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generate_schema.py:871:        BaseModel_ = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generate_schema.py:875:            getattr(get_schema, '__func__', None) is BaseModel_.__get_pydantic_core_schema__.__func__  # pyright: ignore[reportFunctionMemberAccess]
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generate_schema.py:880:            # BaseModel.__get_pydantic_core_schema__ is defined for backwards compatibility,
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generate_schema.py:915:            from pydantic.v1 import BaseModel as BaseModelV1
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generate_schema.py:917:            if issubclass(obj, BaseModelV1):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generate_schema.py:934:        # or the equivalent for BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generate_schema.py:935:        # class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generate_schema.py:1000:        BaseModel = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generate_schema.py:1002:        if lenient_issubclass(obj, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generate_schema.py:2631:        BaseModel = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_generate_schema.py:2635:            and BaseModel.__get_pydantic_json_schema__.__func__  # type: ignore
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_typing_extra.py:30:    from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_typing_extra.py:293:    obj: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_namespace_utils.py:168:            from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_namespace_utils.py:173:                class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_fields.py:34:    from ..main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_fields.py:79:    cls: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_fields.py:95:        cls: BaseModel or dataclass.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_fields.py:109:    BaseModel = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_fields.py:143:                        if not (issubclass(b, BaseModel) and ann_name in getattr(b, '__pydantic_fields__', {})):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_fields.py:302:    cls: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:22:from ..warnings import GenericBeforeBaseModelWarning, PydanticDeprecatedSince20
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:44:    from ..main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:104:        # Note `ModelMetaclass` refers to `BaseModel`, but is also used to *create* `BaseModel`, so we rely on the fact
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:105:        # that `BaseModel` itself won't have any bases, but any subclass of it will, to determine whether the `__new__`
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:106:        # call we're in the middle of is for the `BaseModel` class.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:121:                    def wrapped_model_post_init(self: BaseModel, context: Any, /) -> None:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:135:            cls = cast('type[BaseModel]', super().__new__(mcs, cls_name, bases, namespace, **kwargs))
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:136:            BaseModel_ = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:139:            if Generic in mro and mro.index(Generic) < mro.index(BaseModel_):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:141:                    GenericBeforeBaseModelWarning(
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:142:                        'Classes should inherit from `BaseModel` before generic classes (e.g. `typing.Generic[T]`) '
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:150:                None if cls.model_post_init is BaseModel_.model_post_init else 'model_post_init'
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:250:            # only hit for _proper_ subclasses of BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:258:                    None,  # In case the metaclass is used with a class other than `BaseModel`.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:293:        BaseModel = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:299:            if issubclass(base, BaseModel) and base is not BaseModel:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:336:def init_private_attributes(self: BaseModel, context: Any, /) -> None:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:337:    """This function is meant to behave like a BaseModel method to initialise private attributes.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:342:        self: The BaseModel instance.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:359:    BaseModel = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:362:    if model_post_init is not BaseModel.model_post_init:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:502:def set_default_hash_func(cls: type[BaseModel], bases: tuple[type[Any], ...]) -> None:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:507:        # It will be `None` if not overridden from BaseModel.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:515:def make_hash_func(cls: type[BaseModel]) -> Any:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:532:    cls: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:539:        cls: BaseModel or dataclass.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:563:    cls: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:576:        cls: BaseModel or dataclass.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:625:        'create_model' if create_model_module else 'BaseModel',
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:648:def set_deprecated_descriptors(cls: type[BaseModel]) -> None:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:682:    def __set_name__(self, cls: type[BaseModel], name: str) -> None:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:685:    def __get__(self, obj: BaseModel | None, obj_type: type[BaseModel] | None = None) -> Any:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_internal/_model_construction.py:699:    # as `BaseModel.__setattr__` is defined and takes priority.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/warnings.py:87:class GenericBeforeBaseModelWarning(Warning):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/__init__.py:117:    'BaseModel',
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/__init__.py:284:    'BaseModel': (__spec__.parent, '.main'),
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/json_schema.py:8:[`BaseModel.model_json_schema`][pydantic.BaseModel.model_json_schema] and
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/json_schema.py:64:    from .main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/json_schema.py:1484:        cls = cast('type[BaseModel]', schema['cls'])
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/json_schema.py:1506:        from .main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/json_schema.py:1519:        # BaseModel and dataclasses; don't use cls.__doc__ as it will contain the verbose class signature by default
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/json_schema.py:1520:        docstring = None if cls is BaseModel or dataclasses.is_dataclass(cls) else cls.__doc__
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/json_schema.py:1535:        if issubclass(cls, BaseModel) and cls.__pydantic_root_model__:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/json_schema.py:2037:        (e.g., int, float, str), and false for those that would (e.g., BaseModel subclasses).
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/json_schema.py:2380:    cls: type[BaseModel] | type[PydanticDataclass],
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/json_schema.py:2402:    from .main import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/json_schema.py:2409:    if cls is BaseModel:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/json_schema.py:2410:        raise AttributeError('model_json_schema() must be called on a subclass of BaseModel, not BaseModel itself.')
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/json_schema.py:2417:    models: Sequence[tuple[type[BaseModel] | type[PydanticDataclass], JsonSchemaMode]],
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/json_schema.py:2424:) -> tuple[dict[tuple[type[BaseModel] | type[PydanticDataclass], JsonSchemaMode], JsonSchemaValue], JsonSchemaValue]:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/json_schema.py:2448:    inputs: list[tuple[type[BaseModel] | type[PydanticDataclass], JsonSchemaMode, CoreSchema]] = [
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/json_schema.py:2640:            from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/json_schema.py:2643:            class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_serializers.py:28:    from pydantic import BaseModel, PlainSerializer
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_serializers.py:34:    class StudentModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_serializers.py:99:    from pydantic import BaseModel, WrapSerializer
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_serializers.py:101:    class EventDatetime(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_serializers.py:118:    class EventModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_serializers.py:248:    from pydantic import BaseModel, field_serializer
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_serializers.py:250:    class StudentModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_serializers.py:367:    from pydantic import BaseModel, model_serializer
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_serializers.py:369:    class TemperatureModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/deprecated/copy_internals.py:17:    from .. import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/deprecated/copy_internals.py:22:    Model = typing.TypeVar('Model', bound='BaseModel')
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/deprecated/copy_internals.py:30:    self: BaseModel,
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/deprecated/copy_internals.py:125:    cls: type[BaseModel],
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/deprecated/copy_internals.py:135:    from .. import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/deprecated/copy_internals.py:137:    if isinstance(v, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/deprecated/copy_internals.py:199:    self: BaseModel,
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/deprecated/json.py:94:    BaseModel = import_cached_base_model()
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/deprecated/json.py:96:    if isinstance(obj, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/deprecated/json.py:114:    '`custom_pydantic_encoder` is deprecated, use `BaseModel.model_dump` instead.',
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/deprecated/json.py:119:        '`custom_pydantic_encoder` is deprecated, use `BaseModel.model_dump` instead.',
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/deprecated/decorator.py:12:from ..main import BaseModel, create_model
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/deprecated/decorator.py:145:    def init_model_instance(self, *args: Any, **kwargs: Any) -> BaseModel:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/deprecated/decorator.py:196:    def execute(self, m: BaseModel) -> Any:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/deprecated/decorator.py:243:        class DecoratorBaseModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/deprecated/decorator.py:284:        self.model = create_model(to_pascal(self.raw_function.__name__), __base__=DecoratorBaseModel, **fields)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/_migration.py:13:    'pydantic.generics:GenericModel': 'pydantic.BaseModel',
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:3:# Because `dict` is in the local namespace of the `BaseModel` class, we use `Dict` for annotations.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:72:__all__ = 'BaseModel', 'create_model'
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:84:def _check_frozen(model_cls: type[BaseModel], name: str, value: Any) -> None:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:97:def _model_field_setattr_handler(model: BaseModel, name: str, val: Any) -> None:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:102:def _private_setattr_handler(model: BaseModel, name: str, val: Any) -> None:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:112:_SIMPLE_SETATTR_HANDLERS: Mapping[str, Callable[[BaseModel, str, Any], None]] = {
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:121:class BaseModel(metaclass=_model_construction.ModelMetaclass):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:179:    # Must be set for `GenerateSchema.model_schema` to work for a plain `BaseModel` annotation.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:208:    __pydantic_setattr_handlers__: ClassVar[Dict[str, Callable[[BaseModel, str, Any], None]]]  # noqa: UP006
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:224:        # Prevent `BaseModel` from being instantiated directly
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:227:            'Pydantic models should inherit from BaseModel, BaseModel cannot be instantiated directly',
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:231:            'Pydantic models should inherit from BaseModel, BaseModel cannot be instantiated directly',
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:236:            'Pydantic models should inherit from BaseModel, BaseModel cannot be instantiated directly',
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:322:                this is directly used for the [`model_fields_set`][pydantic.BaseModel.model_fields_set] attribute.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:563:        This method can be overridden to achieve a custom naming scheme for generic BaseModels.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:786:    def __get_pydantic_core_schema__(cls, source: type[BaseModel], handler: GetCoreSchemaHandler, /) -> CoreSchema:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:788:        # In the generate schema logic, this method (`BaseModel.__get_pydantic_core_schema__`) is special cased to
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:791:            'The `__get_pydantic_core_schema__` method of the `BaseModel` class is deprecated. If you are calling '
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:822:                Since this gets called by `BaseModel.model_json_schema` you can override the
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:852:    ) -> type[BaseModel] | _forward_ref.PydanticRecursiveRef:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:857:        if cls is BaseModel:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:858:            raise TypeError('Type parameters should be placed on typing.Generic, not BaseModel')
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:867:        # For a model `class Model[T, U, V = int](BaseModel): ...` parametrized with `(str, bool)`,
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:975:                # See `BaseModel.__repr_args__` for more details
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:1001:        def _setattr_handler(self, name: str, value: Any) -> Callable[[BaseModel, str, Any], None] | None:
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:1113:            if isinstance(other, BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:1148:                # raises an error in BaseModel.__getattr__ instead of returning the class attribute
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:1154:                    # In rare cases (such as when using the deprecated BaseModel.copy() method),
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:1163:            # other instance is not a BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:1177:            from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:1179:            class MyModel(BaseModel, extra='allow'): ...
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:1454:        'See the docstring of `BaseModel.copy` for details about how to handle `include` and `exclude`.',
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:1489:            'See the docstring of `BaseModel.copy` for details about how to handle `include` and `exclude`.',
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:1646:ModelT = TypeVar('ModelT', bound=BaseModel)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:1661:) -> type[BaseModel]: ...
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:1696:    subclass of [`BaseModel`][pydantic.BaseModel].
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:1716:        The new [model][pydantic.BaseModel].
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/main.py:1722:        __base__ = (cast('type[ModelT]', BaseModel),)
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/plugin/__init__.py:35:SchemaKind: TypeAlias = Literal['BaseModel', 'TypeAdapter', 'dataclass', 'create_model', 'validate_call']
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:172:            from pydantic import BaseModel, conint
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:174:            class Foo(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:182:            from pydantic import BaseModel, Field
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:184:            class Foo(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:202:    from pydantic import BaseModel, ValidationError, conint
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:204:    class ConstrainedExample(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:242:from pydantic import BaseModel, PositiveInt, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:244:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:273:from pydantic import BaseModel, NegativeInt, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:275:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:304:from pydantic import BaseModel, NonPositiveInt, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:306:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:335:from pydantic import BaseModel, NonNegativeInt, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:337:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:366:from pydantic import BaseModel, StrictInt, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:368:class StrictIntModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:433:            from pydantic import BaseModel, confloat
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:435:            class Foo(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:443:            from pydantic import BaseModel, Field
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:445:            class Foo(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:464:    from pydantic import BaseModel, ValidationError, confloat
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:466:    class ConstrainedExample(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:504:from pydantic import BaseModel, PositiveFloat, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:506:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:535:from pydantic import BaseModel, NegativeFloat, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:537:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:566:from pydantic import BaseModel, NonPositiveFloat, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:568:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:597:from pydantic import BaseModel, NonNegativeFloat, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:599:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:628:from pydantic import BaseModel, StrictFloat, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:630:class StrictFloatModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:648:from pydantic import BaseModel, FiniteFloat
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:650:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:771:            from pydantic import BaseModel, constr
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:773:            class Foo(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:781:            from pydantic import BaseModel, StringConstraints
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:783:            class Foo(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:795:    from pydantic import BaseModel, constr
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:797:    class Foo(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:927:        from pydantic import BaseModel, Field, ImportString, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:929:        class ImportThings(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:957:        class ImportThingsDefaultPyObj(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:961:        class ImportThingsDefaultString(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:969:        class ImportThingsMissingValidateDefault(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:979:        from pydantic import BaseModel, ImportString
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:981:        class ImportThings(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1065:            from pydantic import BaseModel, condecimal
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1067:            class Foo(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1076:            from pydantic import BaseModel, Field
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1078:            class Foo(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1098:    from pydantic import BaseModel, ValidationError, condecimal
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1100:    class ConstrainedExample(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1189:from pydantic import UUID1, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1191:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1203:from pydantic import UUID3, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1205:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1217:from pydantic import UUID4, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1219:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1231:from pydantic import UUID5, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1233:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1245:from pydantic import UUID6, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1247:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1259:from pydantic import UUID7, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1261:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1273:from pydantic import UUID8, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1275:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1350:from pydantic import BaseModel, FilePath, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1352:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1392:from pydantic import BaseModel, DirectoryPath, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1394:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1451:        from pydantic import BaseModel, Json, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1453:        class AnyJsonModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1456:        class ConstrainedJsonModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1501:        from pydantic import BaseModel, Json
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1503:        class ConstrainedJsonModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1586:    from pydantic import BaseModel, Secret
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1590:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1609:    from pydantic import BaseModel, Secret
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1615:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1637:    from pydantic import BaseModel, Field, Secret, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1641:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1813:    from pydantic import BaseModel, SecretStr
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1815:    class User(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1836:    from pydantic import BaseModel, SecretBytes, SecretStr, field_serializer
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1838:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1881:    from pydantic import BaseModel, SecretBytes
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:1883:    class User(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2044:    from pydantic import BaseModel, ByteSize
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2046:    class MyModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2485:    from pydantic import BaseModel, EncodedBytes, EncoderProtocol, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2504:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2584:    from pydantic import BaseModel, EncodedStr, EncoderProtocol, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2603:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2724:from pydantic import Base64Bytes, BaseModel, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2726:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2771:from pydantic import Base64Str, BaseModel, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2773:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2810:from pydantic import Base64UrlBytes, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2812:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2831:from pydantic import Base64UrlStr, BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2833:class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2861:    from pydantic import BaseModel, GetPydanticSchema
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2865:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2911:    from pydantic import BaseModel, Discriminator, Tag
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2913:    class Pie(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2928:    class ThanksgivingDinner(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:2998:    from pydantic import BaseModel, Discriminator, Tag
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:3000:    class Pie(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:3015:    class ThanksgivingDinner(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:3189:    from pydantic import BaseModel, JsonValue, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:3191:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:3267:    from pydantic import BaseModel, FailFast, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/types.py:3269:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/networks.py:577:    from pydantic import BaseModel, HttpUrl, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/networks.py:579:    class MyModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/networks.py:614:    from pydantic import BaseModel, HttpUrl
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/networks.py:616:    class MyModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/networks.py:702:        BaseModel,
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/networks.py:709:    class MyModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/networks.py:724:    class MyDatabaseModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/networks.py:970:        from pydantic import BaseModel, EmailStr
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/networks.py:972:        class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/networks.py:1019:    from pydantic import BaseModel, NameEmail
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/networks.py:1021:    class User(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/networks.py:1105:        from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/networks.py:1108:        class IpModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/dataclasses.py:323:    This is analogous to `BaseModel.model_rebuild`.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/root_model.py:12:from .main import BaseModel, _object_setattr
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/root_model.py:35:class RootModel(BaseModel, typing.Generic[RootModelRootType], metaclass=_RootModelMetaclass):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/root_model.py:39:    A Pydantic `BaseModel` for the root object of the model.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/root_model.py:139:            See the documentation of `BaseModel.model_dump` for more details about the arguments.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/root_model.py:142:            not a `BaseModel` subclass. If `RootModelRootType` is a `BaseModel` subclass, then the return
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:71:      from pydantic import BaseModel, ConfigDict
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:73:      class User(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:89:      from pydantic import BaseModel, ConfigDict, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:92:      class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:111:      from pydantic import BaseModel, ConfigDict
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:114:      class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:126:      from pydantic import BaseModel, ConfigDict, Field, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:129:      class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:186:        from pydantic import BaseModel, ConfigDict, Field
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:188:        class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:221:    from pydantic import BaseModel, ConfigDict, Field
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:228:    class SomeModel(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:255:    from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:257:    class User(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:274:    from pydantic import BaseModel, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:276:    class User(BaseModel, validate_assignment=True):  # (1)!
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:303:    from pydantic import BaseModel, ConfigDict, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:310:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:375:    from pydantic import BaseModel, ConfigDict
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:378:    class Voice(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:395:    from pydantic import AliasGenerator, BaseModel, ConfigDict
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:398:    class Athlete(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:456:    from pydantic import BaseModel, ConfigDict
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:458:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:484:    from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:486:    class User(BaseModel, revalidate_instances='never'):  # (1)!
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:492:    class Transaction(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:519:    from pydantic import BaseModel, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:521:    class User(BaseModel, revalidate_instances='always'):  # (1)!
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:527:    class Transaction(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:560:    from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:562:    class User(BaseModel, revalidate_instances='subclass-instances'):  # (1)!
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:568:    class Transaction(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:648:    prevent collisions between model attributes and `BaseModel`'s own methods. This was changed
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:657:    from pydantic import BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:663:        class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:681:    from pydantic import BaseModel, ConfigDict
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:686:        class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:714:    from pydantic import BaseModel, ConfigDict
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:718:        class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:726:        Field "model_validate" conflicts with member <bound method BaseModel.model_validate of <class 'pydantic.main.BaseModel'>> of protected namespace "model_".
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:738:    from pydantic import BaseModel, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:740:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:757:    from pydantic import BaseModel, ConfigDict, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:759:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:781:    [`Model.model_rebuild(_types_namespace=...)`][pydantic.BaseModel.model_rebuild].
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:811:    from pydantic import BaseModel, ConfigDict
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:813:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:854:    from pydantic import BaseModel, ConfigDict, Json
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:856:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:902:    from pydantic import BaseModel, ConfigDict, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:904:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:917:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:946:    from pydantic import BaseModel, ConfigDict, Field, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:948:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:987:    from pydantic import BaseModel, ConfigDict, Field
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:990:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:1049:    from pydantic import BaseModel, ConfigDict, Field
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:1051:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:1087:    from pydantic import BaseModel, ConfigDict, Field
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:1089:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:1124:    from pydantic import BaseModel, ConfigDict, Field
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/config.py:1126:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/mypy.py:84:BASEMODEL_FULLNAME = 'pydantic.main.BaseModel'
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/mypy.py:423:    """Transform the BaseModel subclass according to the plugin settings.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/mypy.py:454:        """Configures the BaseModel subclass according to the plugin settings.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/mypy.py:524:        # Handle `class MyModel(BaseModel, <name>=<expr>, ...):`
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/mypy.py:609:        for info in reversed(cls.info.mro[1:-1]):  # 0 is the current class, -2 is BaseModel, -1 is object
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/mypy.py:631:                        'BaseModel field may only be overridden by another field',
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/mypy.py:736:                'Type aliases inside BaseModel definitions are not supported at runtime',
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/mypy.py:755:        # x: InitVar[int] is not supported in BaseModel
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/mypy.py:759:                'InitVar is not supported in BaseModel',
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/mypy.py:779:                    'Need type argument for Final[...] with non-literal default in BaseModel',
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/mypy.py:1342:    # signature incompatible with the superclass, which causes mypy errors to occur for every subclass of BaseModel.
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_validators.py:41:        from pydantic import AfterValidator, BaseModel, ValidationError
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_validators.py:45:        class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_validators.py:104:        from pydantic import BaseModel, BeforeValidator
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_validators.py:108:        class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_validators.py:177:        from pydantic import BaseModel, PlainValidator
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_validators.py:186:        class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_validators.py:269:    from pydantic import BaseModel, ValidationError, WrapValidator
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_validators.py:283:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_validators.py:425:        BaseModel,
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_validators.py:430:    class Model(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_validators.py:682:    from pydantic import BaseModel, ValidationError, model_validator
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_validators.py:684:    class Square(BaseModel):
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_validators.py:742:            from pydantic import BaseModel, InstanceOf
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/pydantic/functional_validators.py:747:            class Bar(BaseModel):

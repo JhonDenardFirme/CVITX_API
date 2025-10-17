@@ -1,0 +1,5 @@
+/home/ubuntu/cvitx/api/app/routes/users_profile.py:100:@router.delete("/avatar")
+/home/ubuntu/cvitx/api/app/routes/workspace_files.py:147:@router.delete("/{workspace_id}/files/{file_id}")
+/home/ubuntu/cvitx/api/app/routes/workspaces.py:137:@router.delete("/{workspace_id}", status_code=204)
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/routing.py:2857:        @router.delete("/items/{item_id}")
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/routing.py:2857:        @router.delete("/items/{item_id}")

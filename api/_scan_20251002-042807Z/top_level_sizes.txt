@@ -1,0 +1,6 @@
+8.0K	/home/ubuntu/cvitx/api/scripts
+20K	/home/ubuntu/cvitx/api/_scan_20251002-042807Z
+112K	/home/ubuntu/cvitx/api/migrations
+480K	/home/ubuntu/cvitx/api/app
+1.6G	/home/ubuntu/cvitx/api
+1.6G	/home/ubuntu/cvitx/api/.venv

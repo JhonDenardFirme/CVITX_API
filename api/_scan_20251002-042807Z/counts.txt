@@ -1,0 +1,3 @@
+  86 /home/ubuntu/cvitx/api/_scan_20251002-042807Z/all_files.txt
+  11 /home/ubuntu/cvitx/api/_scan_20251002-042807Z/all_dirs.txt
+  97 total

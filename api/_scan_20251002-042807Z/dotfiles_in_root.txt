@@ -1,0 +1,8 @@
+-rw-rw-r-- 1 ubuntu ubuntu    1566 Sep 28 11:20 .env
+-rw-rw-r-- 1 ubuntu ubuntu     960 Sep 22 04:40 .env.bak
+-rw-rw-r-- 1 ubuntu ubuntu     299 Sep 21 03:42 .env.bak.1758426156
+-rw-rw-r-- 1 ubuntu ubuntu    1069 Sep 24 19:46 .env.bak.1758743172
+-rw-rw-r-- 1 ubuntu ubuntu     223 Sep 19 09:15 .env.example
+-rw-rw-r-- 1 ubuntu ubuntu     489 Sep 21 05:32 .env.save
+-rw-rw-r-- 1 ubuntu ubuntu     821 Sep 21 05:45 .env.save.1
+drwxrwxr-x 6 ubuntu ubuntu    4096 Sep 22 03:39 .venv

@@ -1,0 +1,11 @@
+/home/ubuntu/cvitx/api
+/home/ubuntu/cvitx/api/scripts
+/home/ubuntu/cvitx/api/app
+/home/ubuntu/cvitx/api/app/services
+/home/ubuntu/cvitx/api/app/utils
+/home/ubuntu/cvitx/api/app/routes
+/home/ubuntu/cvitx/api/app/middleware
+/home/ubuntu/cvitx/api/app/auth
+/home/ubuntu/cvitx/api/migrations
+/home/ubuntu/cvitx/api/migrations/versions
+/home/ubuntu/cvitx/api/_scan_20251002-042807Z

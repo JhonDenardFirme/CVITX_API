@@ -1,0 +1,12 @@
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/applications.py:1084:    def add_api_route(
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/applications.py:1116:        self.router.add_api_route(
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/applications.py:1173:            self.router.add_api_route(
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/routing.py:888:    def add_api_route(
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/routing.py:1001:            self.add_api_route(
+/home/ubuntu/cvitx/api/.venv/lib/python3.12/site-packages/fastapi/routing.py:1309:                self.add_api_route(
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/applications.py:1084:    def add_api_route(
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/applications.py:1116:        self.router.add_api_route(
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/applications.py:1173:            self.router.add_api_route(
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/routing.py:888:    def add_api_route(
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/routing.py:1001:            self.add_api_route(
+/home/ubuntu/cvitx/api/.venv/lib64/python3.12/site-packages/fastapi/routing.py:1309:                self.add_api_route(

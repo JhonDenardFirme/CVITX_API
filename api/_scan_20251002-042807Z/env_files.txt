@@ -1,0 +1,7 @@
+/home/ubuntu/cvitx/api/.env.bak	4 KB
+/home/ubuntu/cvitx/api/.env.example	4 KB
+/home/ubuntu/cvitx/api/.env.bak.1758743172	4 KB
+/home/ubuntu/cvitx/api/.env.save	4 KB
+/home/ubuntu/cvitx/api/.env.save.1	4 KB
+/home/ubuntu/cvitx/api/.env	4 KB
+/home/ubuntu/cvitx/api/.env.bak.1758426156	4 KB

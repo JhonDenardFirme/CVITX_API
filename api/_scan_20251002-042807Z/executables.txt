@@ -1,0 +1,1 @@
+/home/ubuntu/cvitx/api/scripts/day4_smoke.sh
