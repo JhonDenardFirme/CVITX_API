@@ -151,3 +151,54 @@ def show(workspace_id: str, analysis_id: str, me=Depends(require_user)):
           "status": r["status"], "error_msg": r["error_msg"]
         }
     return out
+
+# List image analyses (plural) — simple paginated list
+@router.get("/{workspace_id}/image-analyses")
+def list_image_analyses(workspace_id: str, limit: int = 20, offset: int = 0, me=Depends(require_user)):
+    with engine.begin() as conn:
+        r = conn.execute(text("""
+          SELECT 1 FROM workspaces
+           WHERE id=:wid AND owner_user_id=:uid AND deleted_at IS NULL
+        """), {"wid": workspace_id, "uid": str(me.id)}).fetchone()
+        if not r:
+            raise HTTPException(404, "Workspace not found")
+
+        rows = conn.execute(text("""
+          SELECT id, analysis_no, input_image_s3_key, status, created_at
+            FROM image_analyses
+           WHERE workspace_id = :wid
+           ORDER BY created_at DESC
+           LIMIT :limit OFFSET :offset
+        """), {"wid": workspace_id, "limit": limit, "offset": offset}).mappings().all()
+
+    return {
+        "items": [dict(row) for row in rows],
+        "limit": limit,
+        "offset": offset
+    }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Singular path aliases: /image-analysis/…  (leave plural routes intact)
+alias = APIRouter(prefix="/workspaces", tags=["image-analysis"])
+
+@alias.post("/{workspace_id}/image-analysis/presign")
+def presign_singular(workspace_id: str, body: PresignIn, me=Depends(require_user)):
+    return presign(workspace_id, body, me)
+
+@alias.post("/{workspace_id}/image-analysis/commit")
+def commit_singular(workspace_id: str, body: CommitIn, me=Depends(require_user)):
+    return commit(workspace_id, body, me)
+
+@alias.post("/{workspace_id}/image-analysis/{analysis_id}/enqueue")
+def enqueue_singular(workspace_id: str, analysis_id: str, me=Depends(require_user)):
+    return enqueue(workspace_id, analysis_id, me)
+
+@alias.get("/{workspace_id}/image-analysis/{analysis_id}")
+def show_singular(workspace_id: str, analysis_id: str, me=Depends(require_user)):
+    return show(workspace_id, analysis_id, me)
+
+# Singular LIST → reuse the plural list handler
+@alias.get("/{workspace_id}/image-analysis")
+def list_singular(workspace_id: str, limit: int = 20, offset: int = 0, me=Depends(require_user)):
+    return list_image_analyses(workspace_id, limit, offset, me)
+# ─────────────────────────────────────────────────────────────────────────────

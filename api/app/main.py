@@ -31,6 +31,7 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(analysis_images.router)
+app.include_router(analysis_images.alias)
 app.include_router(uploads.router)
 app.include_router(videos.router)
 app.include_router(queue_routes.router)
