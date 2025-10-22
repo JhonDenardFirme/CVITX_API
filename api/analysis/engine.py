@@ -627,3 +627,431 @@ if __name__ == "__main__":
     m, rep = load_model(os.getenv("VARIANT","baseline"))
     LOG.info("selftest_model", head_sig=_model_vocab_signature(m), aligned=rep.get("aligned"), trained=rep.get("trained"))
     LOG.info("selftest_ok")
+
+# ==============================================================================
+# PHASE 5 — Inference runner + Colab-style stage timings (MS-computers feel)
+# ==============================================================================
+import math, base64, random
+import numpy as _np
+from time import perf_counter
+from contextlib import nullcontext
+from io import BytesIO
+
+# ---------- ENV knobs (safe defaults) ----------
+def _env_bool(name:str, default:int=0)->bool:
+    v = os.getenv(name, str(default)).strip().lower()
+    return v in ("1","true","yes","on")
+def _env_int(name:str, default:int)->int:
+    try: return int(os.getenv(name, str(default)))
+    except Exception: return int(default)
+def _env_float(name:str, default:float)->float:
+    try: return float(os.getenv(name, str(default)))
+    except Exception: return float(default)
+
+IMG_SIZE     = _env_int("IMG_SIZE", 640)
+AMP          = _env_bool("AMP", 1)  # autocast on CUDA
+WARMUP_STEPS = _env_int("WARMUP_STEPS", 2)
+
+# Cascade thresholds / temps (can be tuned later or set via ENV)
+TAU_TYPE  = _env_float("TAU_TYPE", 0.70)
+TAU_MAKE  = _env_float("TAU_MAKE", 0.70)
+TAU_MODEL = _env_float("TAU_MODEL", 0.70)
+TEMP_TYPE  = _env_float("TEMP_TYPE", 1.00)
+TEMP_MAKE  = _env_float("TEMP_MAKE", 1.00)
+TEMP_MODEL = _env_float("TEMP_MODEL", 1.00)
+
+PART_TAU   = _env_float("PART_TAU", 0.30)
+
+ENABLE_COLOR = _env_bool("ENABLE_COLOR", 0)
+ENABLE_PLATE = _env_bool("ENABLE_PLATE", 0)
+
+# ---------- StageTimer ----------
+class StageTimer:
+    ORDER = ["setup","vocab","bundle","preproc","forward","decode","postproc","color","plate","s3","db"]
+    def __init__(self, analysis_id:str, variant:str, logger:JsonLogger=LOG):
+        self.analysis_id = analysis_id
+        self.variant     = variant
+        self.ms          = {}
+        self._logger     = logger
+        self._t0         = perf_counter()
+        self._last       = self._t0
+    def tick(self, name:str):
+        now = perf_counter()
+        self.ms[name] = int(round(1000.0*(now - self._last)))
+        self._last = now
+    def done(self)->dict:
+        total = int(round(1000.0*(perf_counter() - self._t0)))
+        out = {k: int(self.ms.get(k, 0)) for k in self.ORDER}
+        out["total"] = total
+        self._logger.info("stages", analysis_id=self.analysis_id, variant=self.variant, ms=out)
+        return out
+
+# ---------- Letterbox + inverse mapping ----------
+def _letterbox_fit_chw(x: torch.Tensor, size:int):
+    # x: CHW float in [0,1] or uint8 0..255
+    assert x.dim()==3 and x.shape[0] in (1,3), "expect CHW"
+    B = x.unsqueeze(0)
+    _, C, H, W = B.shape
+    s = float(size); sc = min(s/max(1.0,W), s/max(1.0,H))
+    new_w, new_h = int(round(W*sc)), int(round(H*sc))
+    mode = "bilinear" if C>1 else "nearest"
+    Bf = B.float()
+    Bi = F.interpolate(Bf, size=(new_h,new_w), mode=mode, align_corners=False if mode=="bilinear" else None)
+    pw_tot, ph_tot = max(0, size-new_w), max(0, size-new_h)
+    left, right, top, bottom = pw_tot//2, pw_tot-pw_tot//2, ph_tot//2, ph_tot-ph_tot//2
+    padB = F.pad(Bi, (left,right,top,bottom), value=0.0)
+    return padB.squeeze(0), (left, top), sc
+
+def _inv_letterbox_xyxy(box, orig_w:int, orig_h:int, pad:tuple, scale:float):
+    if box is None: return None
+    x1,y1,x2,y2 = [float(v) for v in (box.tolist() if torch.is_tensor(box) else box)]
+    pw, ph = float(pad[0]), float(pad[1]); s = max(1e-12, float(scale))
+    xo1, yo1 = (x1-pw)/s, (y1-ph)/s
+    xo2, yo2 = (x2-pw)/s, (y2-ph)/s
+    xo1 = max(0.0, min(xo1, orig_w-1.0)); yo1 = max(0.0, min(yo1, orig_h-1.0))
+    xo2 = max(0.0, min(xo2, orig_w-1.0)); yo2 = max(0.0, min(yo2, orig_h-1.0))
+    return (xo1,yo1,xo2,yo2)
+
+# ---------- BBox helpers ----------
+def _unpack_bbox_to_BP4HW(raw: torch.Tensor, P_expected:int, H:int, W:int):
+    if raw is None or not torch.is_tensor(raw): return None
+    if raw.dim()==4:
+        B,C,Hh,Ww = raw.shape
+        if Hh!=H or Ww!=W or (C%4)!=0: return None
+        P=min(P_expected, C//4)
+        return raw[:,:4*P].view(B,P,4,H,W)
+    if raw.dim()==5 and raw.shape[2]==4:
+        B,P_in,_,Hh,Ww = raw.shape
+        if Hh!=H or Ww!=W: return None
+        return raw[:,:min(P_expected,P_in)]
+    if raw.dim()==5 and raw.shape[1]==4:
+        B,_,P_in,Hh,Ww = raw.shape
+        if Hh!=H or Ww!=W: return None
+        P=min(P_expected,P_in)
+        return raw[:,: ,:P].permute(0,2,1,3,4)
+    return None
+
+def _decode_dxdy_logwh_cell(BP4: torch.Tensor, H:int, W:int, img_size:int):
+    if BP4 is None: return None
+    B,P,_4,Hh,Ww = BP4.shape
+    if Hh!=H or Ww!=W or _4!=4: return None
+    cw, ch = img_size/float(W), img_size/float(H)
+    i = torch.arange(W, device=BP4.device, dtype=torch.float32).view(1,1,1,W)
+    j = torch.arange(H, device=BP4.device, dtype=torch.float32).view(1,1,H,1)
+    cx0, cy0 = (i+0.5)*cw, (j+0.5)*ch
+    dx, dy = BP4[:,:,0], BP4[:,:,1]
+    lw, lh = BP4[:,:,2].clamp(-8,8), BP4[:,:,3].clamp(-8,8)
+    cx, cy = cx0 + dx*cw, cy0 + dy*ch
+    w,  h  = torch.exp(lw)*cw, torch.exp(lh)*ch
+    x1, y1 = (cx-0.5*w).clamp(0, img_size-1), (cy-0.5*h).clamp(0, img_size-1)
+    x2, y2 = (cx+0.5*w).clamp(0, img_size-1), (cy+0.5*h).clamp(0, img_size-1)
+    return torch.stack([x1,y1,x2,y2], dim=2)  # [B,P,4,H,W]
+
+def _veh_box_from_any(veh_pred: torch.Tensor, img_size:int):
+    if veh_pred is None or not torch.is_tensor(veh_pred): return None
+    if veh_pred.dim()==2 and veh_pred.shape[1]==4:
+        sig = veh_pred.sigmoid().float()
+        cx,cy,w,h = sig[:,0]*img_size, sig[:,1]*img_size, sig[:,2]*img_size, sig[:,3]*img_size
+        x1,y1 = (cx-0.5*w).clamp(0,img_size-1), (cy-0.5*h).clamp(0,img_size-1)
+        x2,y2 = (cx+0.5*w).clamp(0,img_size-1), (cy+0.5*h).clamp(0,img_size-1)
+        return torch.stack([x1,y1,x2,y2], dim=1)
+    return None
+
+def _derive_vehicle_box_from_parts(part_logits: torch.Tensor, BP4: torch.Tensor, img_size:int):
+    if part_logits is None or BP4 is None: return None
+    # pick best cell per part from logits, then take weighted quantiles of boxes
+    B,P,H,W = part_logits.shape
+    probs = torch.sigmoid(part_logits).reshape(B,P,-1)
+    idx = probs.argmax(dim=-1)  # [B,P]
+    ys, xs = (idx // W), (idx % W)
+    boxes_sq = []
+    scores   = []
+    decoded = _decode_dxdy_logwh_cell(BP4, H, W, img_size)  # [B,P,4,H,W]
+    if decoded is None: return None
+    for p in range(P):
+        y, x = int(ys[0,p]), int(xs[0,p])
+        b = decoded[0,p,:,y,x]  # [4]
+        boxes_sq.append([float(b[0]),float(b[1]),float(b[2]),float(b[3])])
+        scores.append(float(probs[0,p, y*W+x]))
+    if not boxes_sq: return None
+    # weighted middle 80%
+    xs1 = torch.tensor([b[0] for b in boxes_sq]); ys1 = torch.tensor([b[1] for b in boxes_sq])
+    xs2 = torch.tensor([b[2] for b in boxes_sq]); ys2 = torch.tensor([b[3] for b in boxes_sq])
+    wts = torch.tensor(scores).clamp_min(1e-6); cw = wts.cumsum(0)/wts.sum()
+
+    def _wq(vals, q):
+        s, idx = torch.sort(vals); ww = wts[idx]; c = ww.cumsum(0)/ww.sum()
+        j = int(torch.searchsorted(c, torch.tensor([q]), right=True).clamp(max=len(s)-1))
+        return float(s[j])
+    x1 = _wq(xs1, 0.10); y1 = _wq(ys1, 0.10)
+    x2 = _wq(xs2, 0.90); y2 = _wq(ys2, 0.90)
+
+    # ensure min size
+    minw = 0.10*img_size; minh = 0.10*img_size
+    if (x2-x1)<minw:
+        cx = 0.5*(x1+x2); x1, x2 = cx-0.5*minw, cx+0.5*minw
+    if (y2-y1)<minh:
+        cy = 0.5*(y1+y2); y1, y2 = cy-0.5*minh, cy+0.5*minh
+    x1 = max(0, x1); y1 = max(0, y1); x2 = min(img_size-1, x2); y2 = min(img_size-1, y2)
+    return (x1,y1,x2,y2)
+
+# ---------- Cascade (Type → Make → Model) ----------
+def _cascade_type_make_model(lt:torch.Tensor|None, lm:torch.Tensor|None, lk:torch.Tensor|None):
+    if lt is None: return {"type":None,"make":None,"model":None,"confs":(),"stop":"no-type"}
+    pt = torch.softmax(lt.float()/max(1e-6,TEMP_TYPE), dim=-1)
+    t  = int(pt.argmax(dim=-1)[0]); ct = float(pt[0,t])
+    if lm is None or ct < TAU_TYPE:
+        return {"type":t,"make":None,"model":None,"confs":(ct,), "stop":"type" if ct<TAU_TYPE else "nocascade"}
+    # Mask makes by allowed types
+    allowed_m = (allowed_makes_by_type_idx or {}).get(t, None)
+    if allowed_m is not None:
+        mask = torch.full_like(lm, -1e9); mask[:, allowed_m] = 0.0
+        pm = torch.softmax((lm.float()+mask)/max(1e-6,TEMP_MAKE), dim=-1)
+    else:
+        pm = torch.softmax(lm.float()/max(1e-6,TEMP_MAKE), dim=-1)
+    m  = int(pm.argmax(dim=-1)[0]); cm = float(pm[0,m])
+    if lk is None or cm < TAU_MAKE:
+        return {"type":t,"make":None,"model":None,"confs":(ct,cm),"stop":"make"}
+    allowed_k = (allowed_models_by_make_idx or {}).get(m, [])
+    if allowed_k:
+        maskk = torch.full_like(lk, -1e9); maskk[:, allowed_k] = 0.0
+        pk = torch.softmax((lk.float()+maskk)/max(1e-6,TEMP_MODEL), dim=-1)
+    else:
+        pk = torch.softmax(lk.float()/max(1e-6,TEMP_MODEL), dim=-1)
+    k  = int(pk.argmax(dim=-1)[0]); ck = float(pk[0,k])
+    if ck < TAU_MODEL:
+        return {"type":t,"make":m,"model":None,"confs":(ct,cm,ck),"stop":"model"}
+    return {"type":t,"make":m,"model":k,"confs":(ct,cm,ck),"stop":"ok"}
+
+# ---------- Model cache + warm-up ----------
+_MODEL_CACHE: dict[str, Tuple[nn.Module, dict]] = {}
+_WARMED: set[str] = set()
+def _get_model_for_variant(variant:str)->Tuple[nn.Module, dict]:
+    key = variant.strip().lower()
+    if key in _MODEL_CACHE: return _MODEL_CACHE[key]
+    try:
+        m, rep = load_model(key)  # existing helper from earlier phases
+    except Exception as e:
+        LOG.warn("load_model_error", variant=key, error=str(e))
+        m, rep = build_model(backbone_name=os.getenv("BACKBONE_NAME_BASELINE","mobilevitv2_200")), {"aligned":True,"trained":False,"load_notes":["fallback_build"]}
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    m = m.to(dev).eval()
+    _MODEL_CACHE[key] = (m, rep or {})
+    return _MODEL_CACHE[key]
+
+def _maybe_warmup(model: nn.Module, device:str, img_size:int, steps:int=WARMUP_STEPS):
+    key = f"{id(model)}:{device}:{img_size}"
+    if key in _WARMED or steps<=0: return
+    x = torch.zeros(1,3,img_size,img_size, device=device)
+    use_amp = bool(AMP and device.startswith("cuda") and torch.cuda.is_available())
+    ctx = torch.amp.autocast(device_type="cuda") if use_amp else nullcontext()
+    with torch.no_grad():
+        with ctx:
+            for _ in range(int(steps)):
+                _ = model(x)
+            if device.startswith("cuda") and torch.cuda.is_available():
+                torch.cuda.synchronize()
+    _WARMED.add(key)
+    LOG.info("warmup_done", steps=int(steps), device=device)
+
+# ---------- Inference runner ----------
+def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Optional[str]=None):
+    """
+    Returns: (dets, timings, metrics)
+      dets: {
+        "type": name|None, "type_conf": float|0,
+        "make": name|None, "make_conf": float|0,
+        "model": name|None, "model_conf": float|0,
+        "parts": [{"name":str,"conf":float}, ...],
+        "colors": [{"name":str,"fraction":float,"conf":float}, ...],
+        "plate_text": str, "plate_conf": float|0,
+        "veh_box": (x1,y1,x2,y2) in original image coords (if available),
+        "plate_box": (x1,y1,x2,y2) (if available)
+      }
+    """
+    aid = analysis_id or f"an_{int(time.time()*1000)}_{random.randint(100,999)}"
+    timer = StageTimer(aid, variant)
+
+    # setup
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    img = Image.open(BytesIO(img_bytes)).convert("RGB")
+    ow, oh = img.size
+    timer.tick("setup")
+
+    # vocab (touch globals to ensure they’re built/adopted)
+    _ = (len(TYPES), len(MAKES), len(MODELS), len(PARTS), len(REGIONS))
+    timer.tick("vocab")
+
+    # bundle/model
+    model, rep = _get_model_for_variant(variant)
+    timer.tick("bundle")
+
+    # preproc (PIL -> torch CHW float [0,1] -> letterbox -> BCHW)
+    arr = _np.asarray(img)  # HWC uint8
+    tCHW = torch.from_numpy(arr).permute(2,0,1)  # CHW uint8
+    tCHW = tCHW.float()/255.0
+    sq, pad, scale = _letterbox_fit_chw(tCHW, int(IMG_SIZE))  # CHW
+    X = sq.unsqueeze(0).to(dev)  # BCHW
+    timer.tick("preproc")
+
+    # forward (with one-time warm-up)
+    _maybe_warmup(model, dev, int(IMG_SIZE))
+    use_amp = bool(AMP and dev.startswith("cuda") and torch.cuda.is_available())
+    ctx = torch.amp.autocast(device_type="cuda") if use_amp else nullcontext()
+    with torch.no_grad():
+        with ctx:
+            out = model(X)
+            if dev.startswith("cuda") and torch.cuda.is_available():
+                torch.cuda.synchronize()
+    timer.tick("forward")
+
+    # decode: types/makes/models
+    lt = out.get("type_logits")
+    lm = out.get("make_logits")
+    lk = out.get("model_logits")
+    cascade = _cascade_type_make_model(lt, lm, lk)
+    t_id, m_id, k_id = cascade["type"], cascade["make"], cascade["model"]
+    confs = cascade["confs"] + ((0.0,)*(3-len(cascade["confs"])))
+    type_name  = (TYPES[t_id]  if t_id is not None and 0<=t_id<len(TYPES)  else None)
+    make_name  = (MAKES[m_id]  if m_id is not None and 0<=m_id<len(MAKES)  else None)
+    model_name = (MODELS[k_id] if k_id is not None and 0<=k_id<len(MODELS) else None)
+
+    # parts
+    P = len(PARTS)
+    part_logits = out.get("part_logits")  # [B,P,H,W] or None
+    bbox_preds  = out.get("bbox_preds")   # [B,4P,H,W] or compatible
+    parts_list  = []
+    veh_box_sq  = None
+
+    if torch.is_tensor(part_logits):
+        B,Pp,H,W = part_logits.shape
+        probs = torch.sigmoid(part_logits)[0]  # [P,H,W]
+        scores = probs.amax(dim=(-1,-2))       # [P]
+        # pick parts above PART_TAU (sane default)
+        for p_idx, sc in enumerate(scores.tolist()):
+            if float(sc) >= float(PART_TAU):
+                parts_list.append({"name": PARTS[p_idx] if p_idx < len(PARTS) else f"part_{p_idx}",
+                                   "conf": float(sc)})
+        # veh box: prefer explicit veh head, else derive from parts+bbox
+        veh_box_pred = out.get("veh_box_preds")
+        if veh_box_pred is not None:
+            v = _veh_box_from_any(veh_box_pred, int(IMG_SIZE))
+            if v is not None: veh_box_sq = tuple(float(v[0,i].item()) for i in range(4))
+        if veh_box_sq is None and torch.is_tensor(bbox_preds):
+            BP4 = _unpack_bbox_to_BP4HW(bbox_preds, P, H, W)
+            veh_box_sq = _derive_vehicle_box_from_parts(part_logits[0], BP4, int(IMG_SIZE))
+    else:
+        # still try veh head
+        veh_box_pred = out.get("veh_box_preds")
+        if veh_box_pred is not None:
+            v = _veh_box_from_any(veh_box_pred, int(IMG_SIZE))
+            if v is not None: veh_box_sq = tuple(float(v[0,i].item()) for i in range(4))
+
+    # back to original coords
+    veh_box = _inv_letterbox_xyxy(veh_box_sq, ow, oh, pad, scale) if veh_box_sq is not None else None
+
+    timer.tick("decode")
+
+    # postproc: assemble dets
+    dets = {
+        "type": type_name,   "type_conf":  float(confs[0]) if len(confs)>0 else 0.0,
+        "make": make_name,   "make_conf":  float(confs[1]) if len(confs)>1 else 0.0,
+        "model": model_name, "model_conf": float(confs[2]) if len(confs)>2 else 0.0,
+        "parts": parts_list,
+        "colors": [],
+        "plate_text": "",
+        "plate_conf": 0.0,
+        "veh_box": veh_box,
+        "plate_box": None,
+    }
+    timer.tick("postproc")
+
+    # color (optional; warn once if disabled/missing)
+    global _COLOR_WARNED; 
+    try: _COLOR_WARNED
+    except NameError: _COLOR_WARNED = False
+
+    if ENABLE_COLOR:
+        try:
+            from analysis import utils as _U
+            if hasattr(_U, "detect_vehicle_color") and veh_box is not None:
+                # crop and call
+                crop = _U.crop_by_xyxy(img, veh_box) if hasattr(_U, "crop_by_xyxy") else img.crop(tuple(map(int,veh_box)))
+                colors = _U.detect_vehicle_color(crop)
+                # Expected: list of dicts {name,fraction,conf} or similar (be tolerant)
+                if isinstance(colors, (list,tuple)):
+                    out_colors=[]
+                    for c in colors[:3]:
+                        if isinstance(c, dict) and "name" in c:
+                            out_colors.append({"name":str(c["name"]),
+                                               "fraction": float(c.get("fraction", 0.0)),
+                                               "conf": float(c.get("conf", c.get("confidence", 0.0)))})
+                        elif isinstance(c, (list,tuple)) and len(c)>=1:
+                            out_colors.append({"name":str(c[0]),
+                                               "fraction": float(c[1]) if len(c)>1 else 0.0,
+                                               "conf": float(c[2]) if len(c)>2 else 0.0})
+                    dets["colors"] = out_colors
+            else:
+                if not _COLOR_WARNED:
+                    LOG.warn("color_missing_impl", note="ENABLE_COLOR=1 but utils.detect_vehicle_color not found or no veh_box")
+                    _COLOR_WARNED = True
+        except Exception as e:
+            if not _COLOR_WARNED:
+                LOG.warn("color_error", error=str(e)); _COLOR_WARNED=True
+    else:
+        if not _COLOR_WARNED:
+            LOG.warn("color_disabled", note="ENABLE_COLOR=0 → color stage skipped")
+            _COLOR_WARNED = True
+    timer.tick("color")
+
+    # plate (optional; warn once if disabled/missing)
+    global _PLATE_WARNED;
+    try: _PLATE_WARNED
+    except NameError: _PLATE_WARNED=False
+
+    if ENABLE_PLATE and not dets.get("plate_text"):
+        try:
+            from analysis import utils as _U
+            if hasattr(_U, "read_plate_text") and veh_box is not None:
+                crop = _U.crop_by_xyxy(img, veh_box) if hasattr(_U, "crop_by_xyxy") else img.crop(tuple(map(int,veh_box)))
+                resp = _U.read_plate_text(crop)
+                if isinstance(resp, dict):
+                    dets["plate_text"] = resp.get("text","") or resp.get("plate","") or ""
+                    dets["plate_conf"] = float(resp.get("conf", resp.get("confidence", 0.0)))
+                elif isinstance(resp, (list,tuple)) and resp:
+                    dets["plate_text"] = str(resp[0]); dets["plate_conf"] = float(resp[1]) if len(resp)>1 else 0.0
+                elif isinstance(resp, str):
+                    dets["plate_text"] = resp
+            else:
+                if not _PLATE_WARNED:
+                    LOG.warn("plate_missing_impl", note="ENABLE_PLATE=1 but utils.read_plate_text not found or no veh_box")
+                    _PLATE_WARNED = True
+        except Exception as e:
+            if not _PLATE_WARNED:
+                LOG.warn("plate_error", error=str(e)); _PLATE_WARNED=True
+    else:
+        if not _PLATE_WARNED:
+            LOG.warn("plate_disabled", note="ENABLE_PLATE=0 → plate stage skipped")
+            _PLATE_WARNED = True
+    timer.tick("plate")
+
+    # (placeholders for S3 / DB; leave zero if unused)
+    timer.tick("s3")
+    timer.tick("db")
+
+    timings = timer.done()
+
+    # metrics (align E2E with StageTimer total)
+    mem_gb = None
+    if dev.startswith("cuda") and torch.cuda.is_available():
+        try: mem_gb = torch.cuda.memory_allocated()/1e9
+        except Exception: mem_gb = None
+    metrics = {
+        "latency_ms": float(timings["total"]),
+        "gflops": None,  # can be filled later if we wire thop here
+        "mem_gb": float(mem_gb) if mem_gb is not None else None,
+        "device": dev,
+        "trained": bool(rep.get("trained", False)),
+    }
+    return dets, timings, metrics
+

@@ -88,3 +88,104 @@ def crop_by_xyxy(image_bytes: bytes, box: Tuple[int,int,int,int]) -> bytes:
     crop = im.crop((x1,y1,x2,y2))
     out = BytesIO(); crop.save(out, format="JPEG", quality=90)
     return out.getvalue()
+# ===================== Adapters: Color & Plate (env-gated, fault-tolerant) =====================
+import os, io, json, base64, time
+from typing import List, Dict, Any, Optional, Tuple
+from PIL import Image
+
+__COLOR_WARNED = False
+__PLATE_WARNED = False
+
+def _log_json(level: str, event: str, **kw):
+    try:
+        from datetime import datetime, timezone
+        rec = {"ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00","Z"),
+               "level": level, "svc":"cvitx-engine", "event": event}
+        rec.update(kw); print(json.dumps(rec, ensure_ascii=False))
+    except Exception:
+        pass
+
+def _b64_jpeg(img: Image.Image) -> str:
+    buf = io.BytesIO(); img.save(buf, format="JPEG", quality=90); return base64.b64encode(buf.getvalue()).decode("ascii")
+
+def detect_vehicle_color(image_pil: Image.Image, veh_box: Optional[Tuple[float,float,float,float]] = None) -> List[Dict[str, Any]]:
+    global __COLOR_WARNED
+    api_key = os.getenv("COLOR_UTILS_API_KEY") or os.getenv("OPENAI_API_KEY")
+    endpoint = os.getenv("COLOR_UTILS_ENDPOINT")
+    if not api_key:
+        if not __COLOR_WARNED:
+            __COLOR_WARNED = True
+            _log_json("WARN", "color_missing_key", note="ENABLE_COLOR=1 but no COLOR_UTILS_API_KEY/OPENAI_API_KEY provided")
+        return []
+    if not endpoint:
+        if not __COLOR_WARNED:
+            __COLOR_WARNED = True
+            _log_json("WARN", "color_endpoint_unset", note="No COLOR_UTILS_ENDPOINT set; skipping color stage")
+        return []
+    try:
+        import requests
+        payload = {
+            "image_b64": _b64_jpeg(image_pil if veh_box is None else image_pil.crop(tuple(map(int, veh_box)))),
+            "veh_box": [float(v) for v in veh_box] if veh_box else None,
+            "max_colors": 3,
+        }
+        headers = {"Authorization": "Bearer ***", "X-API-Key": api_key}
+        for _ in range(2):
+            try:
+                r = requests.post(endpoint, json=payload, headers=headers, timeout=6)
+                if r.status_code == 200:
+                    js = r.json()
+                    out = []
+                    for i in js.get("colors", [])[:3]:
+                        out.append({
+                            "base": i.get("base") or i.get("label"),
+                            "finish": i.get("finish"),
+                            "lightness": i.get("lightness"),
+                            "conf": i.get("conf"),
+                            "fraction": i.get("fraction")
+                        })
+                    return out
+                time.sleep(0.3)
+            except Exception:
+                time.sleep(0.2)
+        _log_json("WARN","color_timeout_or_error", note=f"http error or timeout at {endpoint}")
+        return []
+    except Exception:
+        _log_json("WARN","color_adapter_error")
+        return []
+
+def read_plate_text(image_pil: Image.Image, plate_box: Optional[Tuple[float,float,float,float]] = None) -> Dict[str, Any]:
+    global __PLATE_WARNED
+    api_key = os.getenv("PLATE_UTILS_API_KEY") or os.getenv("OPENAI_API_KEY")
+    endpoint = os.getenv("PLATE_UTILS_ENDPOINT")
+    if not api_key:
+        if not __PLATE_WARNED:
+            __PLATE_WARNED = True
+            _log_json("WARN", "plate_missing_key", note="ENABLE_PLATE=1 but no PLATE_UTILS_API_KEY/OPENAI_API_KEY provided")
+        return {}
+    if not endpoint:
+        if not __PLATE_WARNED:
+            __PLATE_WARNED = True
+            _log_json("WARN", "plate_endpoint_unset", note="No PLATE_UTILS_ENDPOINT set; skipping plate stage")
+        return {}
+    try:
+        import requests
+        crop = image_pil if plate_box is None else image_pil.crop(tuple(map(int, plate_box)))
+        payload = {"image_b64": _b64_jpeg(crop)}
+        headers = {"Authorization": "Bearer ***", "X-API-Key": api_key}
+        for _ in range(2):
+            try:
+                r = requests.post(endpoint, json=payload, headers=headers, timeout=6)
+                if r.status_code == 200:
+                    js = r.json()
+                    text = (js.get("text") or "").strip()
+                    conf = js.get("conf")
+                    return {"text": text, "conf": conf}
+                time.sleep(0.3)
+            except Exception:
+                time.sleep(0.2)
+        _log_json("WARN","plate_timeout_or_error", note=f"http error or timeout at {endpoint}")
+        return {}
+    except Exception:
+        _log_json("WARN","plate_adapter_error")
+        return {}
