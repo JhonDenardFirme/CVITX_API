@@ -805,7 +805,7 @@ def _cascade_type_make_model(lt:torch.Tensor|None, lm:torch.Tensor|None, lk:torc
     # Mask makes by allowed types
     allowed_m = (allowed_makes_by_type_idx or {}).get(t, None)
     if allowed_m is not None:
-        mask = torch.full_like(lm, -1e9); mask[:, allowed_m] = 0.0
+        mask = torch.full_like(lm, -1e4); mask[:, allowed_m] = 0.0
         pm = torch.softmax((lm.float()+mask)/max(1e-6,TEMP_MAKE), dim=-1)
     else:
         pm = torch.softmax(lm.float()/max(1e-6,TEMP_MAKE), dim=-1)
@@ -814,7 +814,7 @@ def _cascade_type_make_model(lt:torch.Tensor|None, lm:torch.Tensor|None, lk:torc
         return {"type":t,"make":None,"model":None,"confs":(ct,cm),"stop":"make"}
     allowed_k = (allowed_models_by_make_idx or {}).get(m, [])
     if allowed_k:
-        maskk = torch.full_like(lk, -1e9); maskk[:, allowed_k] = 0.0
+        maskk = torch.full_like(lk, -1e4); maskk[:, allowed_k] = 0.0
         pk = torch.softmax((lk.float()+maskk)/max(1e-6,TEMP_MODEL), dim=-1)
     else:
         pk = torch.softmax(lk.float()/max(1e-6,TEMP_MODEL), dim=-1)

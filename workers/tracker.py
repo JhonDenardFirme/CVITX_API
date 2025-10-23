@@ -1,42 +1,76 @@
-import os
-from typing import List, Dict
+import os, logging
+from typing import List, Tuple
+import numpy as np
+
+# deep_sort_realtime interface
 from deep_sort_realtime.deepsort_tracker import DeepSort
 
-MAX_AGE      = int(os.getenv("DEEPSORT_MAX_AGE", "50"))
-N_INIT       = int(os.getenv("DEEPSORT_N_INIT", "2"))
-MAX_IOU_DIST = float(os.getenv("DEEPSORT_MAX_IOU_DISTANCE", "0.8"))
-NN_BUDGET    = int(os.getenv("DEEPSORT_NN_BUDGET", "200"))
-EMBEDDER     = os.getenv("DEEPSORT_EMBEDDER", "mobilenet")
+def _env_int(k, d): 
+    try: return int(os.getenv(k, str(d)))
+    except: return d
+
+def _env_float(k, d): 
+    try: return float(os.getenv(k, str(d)))
+    except: return d
 
 class DeepSortTracker:
     """
-    Consume dets [[x1,y1,x2,y2,conf,cls], ...] → return [{id, tlbr, conf, cls}, ...]
+    Thin wrapper over deep_sort_realtime that ACCEPTS YOLO-style TLWH detections:
+        detections = [([x,y,w,h], conf, cls_id), ...]
+    and internally converts them to XYXY for DeepSort.
+
+    Returns a list of dicts for CONFIRMED tracks on the current frame:
+        [{ "id": int, "tlbr": (x1,y1,x2,y2), "conf": float, "cls": int }, ...]
     """
     def __init__(self):
-        self.tracker = DeepSort(
-            max_age=MAX_AGE, n_init=N_INIT, max_iou_distance=MAX_IOU_DIST,
-            nn_budget=NN_BUDGET, embedder=EMBEDDER, half=True, bgr=True,
+        self.trk = DeepSort(
+            max_age=_env_int("DEEPSORT_MAX_AGE", 50),
+            n_init=_env_int("DEEPSORT_N_INIT", 3),
+            max_iou_distance=_env_float("DEEPSORT_MAX_IOU_DISTANCE", 0.7),
+            nn_budget=_env_int("DEEPSORT_NN_BUDGET", 200),
+            embedder=os.getenv("DEEPSORT_EMBEDDER", "mobilenet"),
+            half=True,     # use half precision on GPU embedder if available
+            bgr=True       # frames are BGR (OpenCV)
         )
+        logging.info("DeepSort Tracker initialised")
+        logging.info("- max age: %s", str(_env_int("DEEPSORT_MAX_AGE", 50)))
+        logging.info("- n_init: %s", str(_env_int("DEEPSORT_N_INIT", 3)))
+        logging.info("- max IoU distance: %s", str(_env_float("DEEPSORT_MAX_IOU_DISTANCE", 0.7)))
+        logging.info("- nn_budget: %s", str(_env_int("DEEPSORT_NN_BUDGET", 200)))
+        logging.info("- embedder: %s", os.getenv("DEEPSORT_EMBEDDER", "mobilenet"))
 
-    def update(self, dets: List[List[float]], frame) -> List[Dict]:
-        ds = [((d[0],d[1],d[2],d[3]), float(d[4]), int(d[5])) for d in dets]
-        tracks = self.tracker.update_tracks(ds, frame=frame)
+    @staticmethod
+    def _tlwh_to_xyxy(tlwh):
+        x, y, w, h = tlwh
+        return [int(x), int(y), int(x + w), int(y + h)]
+
+    def update(self, detections: List[Tuple[list, float, int]], frame) -> list:
+        """
+        detections: [([x,y,w,h], conf, cls), ...]  # TLWH
+        frame: np.ndarray (BGR)
+        """
+        ds_xyxy = []
+        for box, conf, cls_id in detections:
+            # normalize TLWH -> XYXY for deep_sort_realtime
+            x1, y1, x2, y2 = self._tlwh_to_xyxy(box)
+            if x2 <= x1 or y2 <= y1:
+                continue
+            ds_xyxy.append(([x1, y1, x2, y2], float(conf), int(cls_id)))
+
+        tracks = self.trk.update_tracks(ds_xyxy, frame=frame)
         out = []
-        # we’ll select the best conf/cls among overlapping dets for each track
-        def iou(a,b):
-            ax1,ay1,ax2,ay2=a; bx1,by1,bx2,by2=b
-            x1,y1=max(ax1,bx1),max(ay1,by1)
-            x2,y2=min(ax2,bx2),min(ay2,by2)
-            iw,ih=max(0,x2-x1),max(0,y2-y1)
-            inter=iw*ih
-            if inter==0: return 0.0
-            return inter/float((ax2-ax1)*(ay2-ay1)+(bx2-bx1)*(by2-by1)-inter+1e-9)
         for t in tracks:
-            if not t.is_confirmed(): continue
-            l,t0,r,b = map(int, t.to_ltrb())
-            best_conf, best_cls = 0.0, -1
-            for (bb, conf, cls) in ds:
-                if iou((l,t0,r,b), bb) > 0.0 and conf > best_conf:
-                    best_conf, best_cls = conf, cls
-            out.append({"id": int(t.track_id), "tlbr": [l,t0,r,b], "conf": best_conf, "cls": best_cls})
+            if not t.is_confirmed():
+                continue
+            # prefer current bbox, skip stale
+            tlbr = t.to_tlbr()
+            if tlbr is None:
+                continue
+            x1, y1, x2, y2 = map(int, tlbr)
+            out.append({
+                "id": int(t.track_id),
+                "tlbr": (x1, y1, x2, y2),
+                "conf": float(getattr(t, "det_confidence", 1.0)),
+                "cls": int(getattr(t, "det_class", -1)),
+            })
         return out

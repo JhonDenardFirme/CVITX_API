@@ -107,7 +107,7 @@ def _update_parent_status(conn, analysis_id: int):
                 WHEN (SELECT COUNT(*) FROM image_analysis_results r
                       WHERE r.analysis_id=a.id AND r.model_variant IN ('baseline','cmt')) >= 2
                 THEN 'done' ELSE 'processing' END
-            WHERE a.id = %s;
+            WHERE a.analysis_no = %s;
         """, (analysis_id,))
 
 # --- s3 helpers ----------------------------------------------------------------

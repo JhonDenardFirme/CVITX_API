@@ -1,78 +1,110 @@
-import os, json
+import os
+from typing import List, Tuple
+import numpy as np
 from ultralytics import YOLO
 
-YOLO_WEIGHTS     = os.getenv("YOLO_WEIGHTS", "yolov8n.pt")  # auto-downloads
-YOLO_DEVICE      = os.getenv("YOLO_DEVICE", "cpu")
-YOLO_CONF_THRES  = float(os.getenv("YOLO_CONF_THRES", "0.15"))
-YOLO_IOU_THRES   = float(os.getenv("YOLO_IOU_THRES", "0.45"))
-CLASS_NAMES_PATH = os.getenv("YOLO_CLASS_NAMES_JSON")  # path OR raw JSON
-
-# COCO vehicle ids: 2 car, 3 motorbike, 5 bus, 7 truck
-VEHICLE_CLS = {2, 3, 5, 7}
-
-DEFAULT_COCO = [
-    "person","bicycle","car","motorbike","aeroplane","bus","train","truck","boat","traffic light",
-    "fire hydrant","stop sign","parking meter","bench","bird","cat","dog","horse","sheep","cow",
-    "elephant","bear","zebra","giraffe","backpack","umbrella","handbag","tie","suitcase","frisbee",
-    "skis","snowboard","sports ball","kite","baseball bat","baseball glove","skateboard","surfboard",
-    "tennis racket","bottle","wine glass","cup","fork","knife","spoon","bowl","banana","apple",
-    "sandwich","orange","broccoli","carrot","hot dog","pizza","donut","cake","chair","sofa",
-    "pottedplant","bed","diningtable","toilet","tvmonitor","laptop","mouse","remote","keyboard",
-    "cell phone","microwave","oven","toaster","sink","refrigerator","book","clock","vase",
-    "scissors","teddy bear","hair drier","toothbrush"
+# 17 PH vehicle classes (index = class id)
+CLASS_NAMES = [
+    "Car", "SUV", "Pickup", "Van", "Utility Vehicle", "Motorcycle",
+    "Bicycle", "E-Bike", "Pedicab", "Tricycle", "Jeepney",
+    "E-Jeepney", "Bus", "Carousel Bus", "Light Truck",
+    "Container Truck", "Special Vehicle"
 ]
 
-def _load_names():
-    if CLASS_NAMES_PATH:
-        if os.path.exists(CLASS_NAMES_PATH):
-            with open(CLASS_NAMES_PATH, "r") as f:
-                data = json.load(f)
-        else:
-            try:
-                data = json.loads(CLASS_NAMES_PATH)
-            except Exception:
-                data = None
-        if isinstance(data, dict):
-            return [data[str(i)] for i in range(len(data))]
-        if isinstance(data, list):
-            return data
-    return DEFAULT_COCO
-
-CLASS_NAMES = _load_names()
+def _parse_int_list(s: str | None) -> List[int]:
+    if not s: return []
+    out = []
+    for tok in s.replace(" ","").split(","):
+        if tok == "": continue
+        try: out.append(int(tok))
+        except: pass
+    return out
 
 class YoloDetector:
-    def __init__(self):
-        self.model = YOLO(YOLO_WEIGHTS)
+    """
+    Thin adapter around Ultralytics YOLOv8 that returns detections in:
+        dets = [([x, y, w, h], conf, cls_id), ...]
+    Adds hygiene filters:
+      - optional allowed class list (YOLO_ALLOWED_CLS="0,1,...")
+      - crowd bump: if too many dets, raise conf floor
+      - small-box extra conf floor
+    """
+    def __init__(
+        self,
+        weights_path: str | None = None,
+        conf: float | None = None,
+        iou: float | None = None,
+        imgsz: int | None = None,
+        device: str | None = None,
+    ) -> None:
+        self.weights_path = weights_path or os.getenv("YOLO_WEIGHTS") or "yolov8n.pt"
+        self.conf  = float(os.getenv("YOLO_CONF",  str(conf  if conf  is not None else 0.35)))
+        self.iou   = float(os.getenv("YOLO_IOU",   str(iou   if iou   is not None else 0.45)))
+        self.imgsz = int(os.getenv("YOLO_IMGSZ",   str(imgsz if imgsz is not None else 640)))
+        self.device = device or os.getenv("ULTRALYTICS_DEVICE") or "cpu"
 
-    def infer(self, frame_bgr):
-        """
-        Return [[x1,y1,x2,y2,conf,cls], ...] on ORIGINAL frame.
-        If using COCO, keep only vehicle classes for the prototype.
-        """
-        res = self.model.predict(
-            source=frame_bgr,
-            conf=YOLO_CONF_THRES,
-            iou=YOLO_IOU_THRES,
-            device=YOLO_DEVICE,
-            imgsz=640,
+        self.allowed_cls = _parse_int_list(os.getenv("YOLO_ALLOWED_CLS", ""))
+        self.crowd_thresh = int(os.getenv("YOLO_CROWD_DET_THRESHOLD","40"))
+        self.crowd_bump   = float(os.getenv("YOLO_CROWD_CONF_BUMP","0.05"))
+        self.small_min_side = int(os.getenv("YOLO_SMALL_MIN_SIDE","12"))
+        self.small_conf_min = float(os.getenv("YOLO_SMALL_CONF_MIN","0.35"))
+
+        self._model: YOLO | None = None
+
+    def _ensure_model(self) -> YOLO:
+        if self._model is None:
+            self._model = YOLO(self.weights_path)
+        return self._model
+
+    def infer(self, frame: np.ndarray) -> List[Tuple[list, float, int]]:
+        model = self._ensure_model()
+        res = model.predict(
+            source=frame,
+            imgsz=self.imgsz,
+            conf=self.conf,
+            iou=self.iou,
             verbose=False,
-        )
-        out = []
-        for r in res:
-            bs = getattr(r, "boxes", None)
-            if bs is None:
-                continue
-            for b in bs:
-                cls = int(b.cls[0].item())
-                if CLASS_NAMES is DEFAULT_COCO and cls not in VEHICLE_CLS:
-                    continue
-                x1, y1, x2, y2 = [int(v) for v in b.xyxy[0].tolist()]
-                conf = float(b.conf[0].item())
-                if x2 > x1 and y2 > y1:
-                    out.append([x1, y1, x2, y2, conf, cls])
-        return out
+            device=self.device
+        )[0]
 
-    def class_name(self, cls_id: int) -> str:
-        if 0 <= cls_id < len(CLASS_NAMES):
-            return CLASS_NAMES[cls_id]
-        return f"cls_{cls_id}"
+        dets: List[Tuple[list, float, int]] = []
+        H, W = frame.shape[:2]
+        if res.boxes is None:
+            return dets
+
+        raw: List[Tuple[list, float, int]] = []
+        for box in res.boxes:
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            conf = float(box.conf[0])
+            cls_id = int(box.cls[0]) if box.cls is not None else -1
+
+            # in-frame validity
+            if x2 <= x1 or y2 <= y1:         continue
+            if x2 <= 0 or y2 <= 0:           continue
+            if x1 >= W or y1 >= H:           continue
+            w, h = x2 - x1, y2 - y1
+            if w < 10 or h < 10:             continue
+            ar = w / max(h, 1)
+            if ar > 6 or ar < 0.15:          continue
+
+            # optional allowlist
+            if self.allowed_cls and (cls_id not in self.allowed_cls):
+                continue
+
+            raw.append(([x1, y1, w, h], conf, cls_id))
+
+        # Crowd bump: if too many, raise conf floor slightly
+        conf_floor = self.conf
+        if len(raw) >= self.crowd_thresh:
+            conf_floor = max(conf_floor, min(0.99, self.conf + self.crowd_bump))
+
+        for (tlwh, conf, cls_id) in raw:
+            x, y, w, h = tlwh
+            # small-box extra conf floor
+            if min(w, h) <= self.small_min_side and conf < self.small_conf_min:
+                continue
+            if conf < conf_floor:
+                continue
+            dets.append((tlwh, conf, cls_id))
+
+        return dets
