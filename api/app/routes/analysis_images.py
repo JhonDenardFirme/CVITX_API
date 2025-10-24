@@ -12,7 +12,10 @@ from app.services.sqs import send_json
 router = APIRouter(prefix="/workspaces", tags=["image-analyses"])
 
 # DB + S3 clients
-DB_URL = os.environ["DB_URL"].replace("postgresql+psycopg2","postgresql")
+DB_URL = (os.getenv("DATABASE_URL") or os.getenv("DB_URL"))
+if not DB_URL:
+    raise RuntimeError("Missing DATABASE_URL/DB_URL")
+DB_URL = DB_URL.replace("postgresql+psycopg2","postgresql")
 engine = create_engine(DB_URL, pool_pre_ping=True)
 s3 = boto3.client("s3", region_name=settings.aws_region)
 
@@ -116,9 +119,11 @@ def show(workspace_id: str, analysis_id: str, me=Depends(require_user)):
 
         results = conn.execute(text("""
           SELECT model_variant::text, type, type_conf, make, make_conf, model, model_conf,
-                 parts, colors, plate_text, annotated_image_s3_key, latency_ms, gflops, status, error_msg
-            FROM image_analysis_results
-           WHERE analysis_id=:id
+       parts, colors, plate_text, plate_conf,
+       annotated_image_s3_key, vehicle_image_s3_key, plate_image_s3_key,
+       latency_ms, gflops, memory_usage, status, error_msg
+  FROM image_analysis_results
+ WHERE analysis_id=:id
         """), {"id": analysis_id}).mappings().all()
 
     orig_url = s3.generate_presigned_url("get_object",
@@ -136,21 +141,34 @@ def show(workspace_id: str, analysis_id: str, me=Depends(require_user)):
     }
 
     for r in results:
-        ann_url = None
-        if r["annotated_image_s3_key"]:
-            ann_url = s3.generate_presigned_url("get_object",
-              Params={"Bucket": settings.s3_bucket, "Key": r["annotated_image_s3_key"]},
-              ExpiresIn=TTL)
-        out["results"][r["model_variant"]] = {
-          "type": r["type"], "type_conf": r["type_conf"],
-          "make": r["make"], "make_conf": r["make_conf"],
-          "model": r["model"], "model_conf": r["model_conf"],
-          "parts": r["parts"], "colors": r["colors"], "plate_text": r["plate_text"],
-          "annotated_image": {"s3_key": r["annotated_image_s3_key"], "url": ann_url} if ann_url else None,
-          "latency_ms": r["latency_ms"], "gflops": r["gflops"],
-          "status": r["status"], "error_msg": r["error_msg"]
-        }
-    return out
+    ann_url = None
+    if r["annotated_image_s3_key"]:
+        ann_url = s3.generate_presigned_url("get_object",
+          Params={"Bucket": settings.s3_bucket, "Key": r["annotated_image_s3_key"]},
+          ExpiresIn=TTL)
+    veh_url = None
+    if r.get("vehicle_image_s3_key"):
+        veh_url = s3.generate_presigned_url("get_object",
+          Params={"Bucket": settings.s3_bucket, "Key": r["vehicle_image_s3_key"]},
+          ExpiresIn=TTL)
+    plate_url = None
+    if r.get("plate_image_s3_key"):
+        plate_url = s3.generate_presigned_url("get_object",
+          Params={"Bucket": settings.s3_bucket, "Key": r["plate_image_s3_key"]},
+          ExpiresIn=TTL)
+    out["results"][r["model_variant"]] = {
+      "type": r["type"], "type_conf": r["type_conf"],
+      "make": r["make"], "make_conf": r["make_conf"],
+      "model": r["model"], "model_conf": r["model_conf"],
+      "parts": r["parts"], "colors": r["colors"], "plate_text": r["plate_text"],
+      "plate_conf": r["plate_conf"],
+      "annotated_image": {"s3_key": r["annotated_image_s3_key"], "url": ann_url} if ann_url else None,
+      "vehicle_image": {"s3_key": r.get("vehicle_image_s3_key"), "url": veh_url} if veh_url else None,
+      "plate_image": {"s3_key": r.get("plate_image_s3_key"), "url": plate_url} if plate_url else None,
+      "latency_ms": r["latency_ms"], "gflops": r["gflops"], "memory_usage": r["memory_usage"],
+      "status": r["status"], "error_msg": r["error_msg"]
+    }
+return out
 
 # List image analyses (plural) — simple paginated list
 @router.get("/{workspace_id}/image-analyses")

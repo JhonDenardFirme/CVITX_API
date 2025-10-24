@@ -2,10 +2,10 @@ import os, sys, time, json, argparse, traceback
 import boto3
 from sqlalchemy import create_engine, text
 
-from analysis.contracts import parse_analyze_image_message, ContractError
-from analysis.engine import run_inference
-from analysis.utils import annotate
-from analysis.workers.utils import s3_get_bytes, s3_put_bytes, S3_BUCKET, S3_PREFIX
+from api.analysis.contracts import parse_analyze_image_message, ContractError
+from api.analysis.engine import run_inference
+from api.analysis.utils import annotate
+from api.analysis.workers.utils import s3_get_bytes, s3_put_bytes, S3_BUCKET, S3_PREFIX
 
 DB_URL = os.environ["DB_URL"].replace("postgresql+psycopg2","postgresql")
 AWS_REGION = os.getenv("AWS_REGION","ap-southeast-2")
