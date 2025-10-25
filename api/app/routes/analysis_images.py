@@ -67,22 +67,29 @@ def presign(workspace_id: str, body: PresignIn, me=Depends(require_user)):
 
 @router.post("/{workspace_id}/image-analyses/commit")
 def commit(workspace_id: str, body: CommitIn, me=Depends(require_user)):
-    # Validate the object actually exists in S3
-    try:
-        s3.head_object(Bucket=settings.s3_bucket, Key=body.key)
-    except Exception:
-        raise HTTPException(400, "S3 object not found; ensure you PUT with the same Content-Type")
-    with engine.begin() as conn:
-        _assert_workspace(conn, workspace_id, str(me.id))
-        no = _next_no(conn, workspace_id)
-        aid = str(uuid.uuid4())
-        conn.execute(text("""
-          INSERT INTO image_analyses (id, workspace_id, analysis_no, title, description,
-                                      input_image_s3_key, content_type, size_bytes, status)
-          VALUES (:id,:wid,:no,:title,:descr,:key,:ct,:size,'uploaded')
-        """), dict(id=aid, wid=workspace_id, no=no, title=body.title, descr=body.description,
-                   key=body.key, ct=body.content_type, size=body.size_bytes))
-    return {"id": aid, "analysis_no": no, "status": "uploaded"}
+    # --- Security: content-type & size guard ---
+    allowed_types = {"image/jpeg", "image/png"}
+    if body.content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail=f"Unsupported content_type {body.content_type}")
+    if body.size_bytes is None or int(body.size_bytes) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (25MB max)")
+    head = s3.head_object(Bucket=settings.s3_bucket, Key=body.key)
+    actual_len = int(head.get("ContentLength", 0))
+    actual_ct = head.get("ContentType", "")
+    if actual_len != int(body.size_bytes):
+        raise HTTPException(status_code=400, detail="Size mismatch with S3 object")
+    if actual_ct != body.content_type:
+      with engine.begin() as conn:
+          _assert_workspace(conn, workspace_id, str(me.id))
+          no = _next_no(conn, workspace_id)
+          aid = str(uuid.uuid4())
+          conn.execute(text("""
+            INSERT INTO image_analyses (id, workspace_id, analysis_no, title, description,
+                                        input_image_s3_key, content_type, size_bytes, status)
+            VALUES (:id,:wid,:no,:title,:descr,:key,:ct,:size,uploaded)
+          """), dict(id=aid, wid=workspace_id, no=no, title=body.title, descr=body.description,
+                     key=body.key, ct=body.content_type, size=body.size_bytes))
+      return {"id": aid, "analysis_no": no, "status": "uploaded"}
 
 @router.post("/{workspace_id}/image-analyses/{analysis_id}/enqueue")
 def enqueue(workspace_id: str, analysis_id: str, me=Depends(require_user)):
@@ -141,34 +148,35 @@ def show(workspace_id: str, analysis_id: str, me=Depends(require_user)):
     }
 
     for r in results:
-    ann_url = None
-    if r["annotated_image_s3_key"]:
-        ann_url = s3.generate_presigned_url("get_object",
-          Params={"Bucket": settings.s3_bucket, "Key": r["annotated_image_s3_key"]},
-          ExpiresIn=TTL)
-    veh_url = None
-    if r.get("vehicle_image_s3_key"):
-        veh_url = s3.generate_presigned_url("get_object",
-          Params={"Bucket": settings.s3_bucket, "Key": r["vehicle_image_s3_key"]},
-          ExpiresIn=TTL)
-    plate_url = None
-    if r.get("plate_image_s3_key"):
-        plate_url = s3.generate_presigned_url("get_object",
-          Params={"Bucket": settings.s3_bucket, "Key": r["plate_image_s3_key"]},
-          ExpiresIn=TTL)
-    out["results"][r["model_variant"]] = {
-      "type": r["type"], "type_conf": r["type_conf"],
-      "make": r["make"], "make_conf": r["make_conf"],
-      "model": r["model"], "model_conf": r["model_conf"],
-      "parts": r["parts"], "colors": r["colors"], "plate_text": r["plate_text"],
-      "plate_conf": r["plate_conf"],
-      "annotated_image": {"s3_key": r["annotated_image_s3_key"], "url": ann_url} if ann_url else None,
-      "vehicle_image": {"s3_key": r.get("vehicle_image_s3_key"), "url": veh_url} if veh_url else None,
-      "plate_image": {"s3_key": r.get("plate_image_s3_key"), "url": plate_url} if plate_url else None,
-      "latency_ms": r["latency_ms"], "gflops": r["gflops"], "memory_usage": r["memory_usage"],
-      "status": r["status"], "error_msg": r["error_msg"]
-    }
-return out
+        ann_url = veh_url = plate_url = None
+        if r["annotated_image_s3_key"]:
+            ann_url = s3.generate_presigned_url("get_object",
+                Params={"Bucket": settings.s3_bucket, "Key": r["annotated_image_s3_key"]},
+                ExpiresIn=TTL)
+        if r.get("vehicle_image_s3_key"):
+            veh_url = s3.generate_presigned_url("get_object",
+                Params={"Bucket": settings.s3_bucket, "Key": r["vehicle_image_s3_key"]},
+                ExpiresIn=TTL)
+        if r.get("plate_image_s3_key"):
+            plate_url = s3.generate_presigned_url("get_object",
+                Params={"Bucket": settings.s3_bucket, "Key": r["plate_image_s3_key"]},
+                ExpiresIn=TTL)
+        
+        out["results"][r["model_variant"]] = {
+            "type": r["type"], "type_conf": r["type_conf"],
+            "make": r["make"], "make_conf": r["make_conf"],
+            "model": r["model"], "model_conf": r["model_conf"],
+            "colors": r["colors"], "parts": r["parts"],
+            "plate_text": r["plate_text"], "plate_conf": r["plate_conf"],
+            "assets": {
+                "annotated_image_s3_key": r["annotated_image_s3_key"], "annotated_url": ann_url,
+                "vehicle_image_s3_key": r.get("vehicle_image_s3_key"), "vehicle_url": veh_url,
+                "plate_image_s3_key": r.get("plate_image_s3_key"), "plate_url": plate_url
+            },
+            "latency_ms": r["latency_ms"], "gflops": r["gflops"],
+            "status": r["status"], "error_msg": r["error_msg"]
+        }
+    return out
 
 # List image analyses (plural) — simple paginated list
 @router.get("/{workspace_id}/image-analyses")
