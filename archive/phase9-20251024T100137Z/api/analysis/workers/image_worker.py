@@ -2,10 +2,10 @@ import os, sys, time, json, argparse, traceback
 import boto3
 from sqlalchemy import create_engine, text
 
-from analysis.contracts import parse_analyze_image_message, ContractError
-from analysis.models.builder import get_model
-from analysis.models.postprocess import annotate
-from analysis.workers.utils import s3_get_bytes, s3_put_bytes, S3_BUCKET, S3_PREFIX
+from api.analysis.contracts import parse_analyze_image_message, ContractError
+from api.analysis.engine import run_inference
+from api.analysis.utils import annotate
+from api.analysis.workers.utils import s3_get_bytes, s3_put_bytes, S3_BUCKET, S3_PREFIX
 
 DB_URL = os.environ["DB_URL"].replace("postgresql+psycopg2","postgresql")
 AWS_REGION = os.getenv("AWS_REGION","ap-southeast-2")
@@ -21,7 +21,7 @@ def upsert_result(engine, payload, variant: str, annotated_key: str, dets, laten
           )
           VALUES (gen_random_uuid(), :aid, :wid, :variant,
             :type,:type_conf,:make,:make_conf,:model,:model_conf,
-            NULL::jsonb, NULL::jsonb, :plate_text, :ann_key,
+            :parts, :colors, :plate_text, :ann_key,
             :latency_ms, :gflops, 'ready', NULL
           )
           ON CONFLICT (analysis_id, model_variant) DO UPDATE SET
@@ -51,8 +51,9 @@ def upsert_result(engine, payload, variant: str, annotated_key: str, dets, laten
         ))
         # Update parent to 'done' only when both variants exist (simple check)
         r = conn.execute(text("""
-          SELECT COUNT(*) FROM image_analysis_results
-          WHERE analysis_id=:aid
+          SELECT COUNT(*) FROM image_analysis_results r
+          WHERE r.analysis_id=:aid
+            AND r.model_variant IN ('baseline','cmt')
         """), {"aid": payload["analysis_id"]}).scalar_one()
         new_status = 'done' if r >= 2 else 'processing'
         conn.execute(text("UPDATE image_analyses SET status=:st WHERE id=:aid"),
@@ -73,7 +74,6 @@ def main():
     engine = create_engine(DB_URL, pool_pre_ping=True)
     sqs = boto3.client("sqs", region_name=AWS_REGION)
 
-    model = get_model(variant)
     print(f"[startup] worker={variant} queue={queue_url}")
 
     while True:
@@ -92,10 +92,9 @@ def main():
                 body = m.get("Body","")
                 try:
                     payload = parse_analyze_image_message(body)
-                    t0 = time.perf_counter()
                     img_bytes = s3_get_bytes(payload["input_image_s3_uri"])
-                    dets = model.infer(img_bytes)
-                    latency_ms = int((time.perf_counter() - t0) * 1000)
+                    dets, timings, metrics = run_inference(img_bytes, variant=variant, analysis_id=payload["analysis_id"])
+                    latency_ms = int(metrics.get("latency_ms", 0))
 
                     ann_bytes = annotate(img_bytes, dets)
                     ann_key = f"{S3_PREFIX}/{payload['workspace_id']}/{payload['analysis_no']}/{variant}/annotated.jpg"

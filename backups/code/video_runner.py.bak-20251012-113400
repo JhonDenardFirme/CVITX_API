@@ -1,0 +1,283 @@
+import os, json, cv2, boto3, traceback, logging, threading, time, math, re
+from datetime import datetime, timezone
+from collections import defaultdict
+
+# Optional GPU override (do NOT force CPU unless told)
+if os.getenv("FORCE_CPU","0") == "1":
+    os.environ.pop("CUDA_VISIBLE_DEVICES", None)
+    os.environ["ULTRALYTICS_DEVICE"] = "cpu"
+
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "api", ".env"))
+
+AWS_REGION             = os.getenv("AWS_REGION", "ap-southeast-2")
+S3_BUCKET              = os.getenv("S3_BUCKET") or os.getenv("BUCKET")
+SQS_VIDEO_QUEUE_URL    = os.getenv("SQS_VIDEO_QUEUE_URL")
+SQS_SNAPSHOT_QUEUE_URL = os.getenv("SQS_SNAPSHOT_QUEUE_URL")
+DB_URL                 = os.getenv("DB_URL")
+FRAME_STRIDE           = int(os.getenv("FRAME_STRIDE","3"))
+
+# Progress / heartbeat
+PROGRESS_LOG_INTERVAL_SEC = int(os.getenv("PROGRESS_LOG_INTERVAL_SEC","10"))
+PROGRESS_LOG_JSON         = int(os.getenv("PROGRESS_LOG_JSON","0"))
+SQS_VIS_HEARTBEAT_SEC     = int(os.getenv("SQS_VIS_HEARTBEAT_SEC","0"))  # 0 = off
+SQS_VIS_TIMEOUT           = int(os.getenv("SQS_VIS_TIMEOUT","300"))
+
+# Boto & DB
+sqs = boto3.client("sqs", region_name=AWS_REGION)
+s3  = boto3.client("s3",  region_name=AWS_REGION)
+
+from sqlalchemy import create_engine, text
+if DB_URL and DB_URL.startswith("postgresql+psycopg2://"):
+    DB_URL = DB_URL.replace("postgresql+psycopg2://","postgresql://",1)
+engine = create_engine(DB_URL, pool_pre_ping=True, future=True) if DB_URL else None
+
+# Components
+from workers.yolo import YoloDetector, CLASS_NAMES
+from workers.tracker import DeepSortTracker
+from workers.snapshotper import (
+    BestFrameKeeper, build_snapshot_key, save_and_upload_snapshot,
+    choose_margin_for_neighbors,
+)
+from workers.timecode import ms_from_frame, iso_add_ms
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [worker_video] %(message)s")
+
+def utcnow_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+def set_status(video_id: str, status: str, err: str | None = None):
+    if not engine:
+        return
+    try:
+        with engine.begin() as conn:
+            if err:
+                conn.execute(
+                    text("UPDATE videos SET status=:s, updated_at=NOW(), error_msg=:e WHERE id=:id"),
+                    {"s": status, "e": err[:500], "id": video_id},
+                )
+            else:
+                conn.execute(
+                    text("UPDATE videos SET status=:s, updated_at=NOW(), error_msg=NULL WHERE id=:id"),
+                    {"s": status, "id": video_id},
+                )
+    except Exception as e:
+        logging.warning("DB status update failed: %r", e)
+
+def download_to_tmp(s3_key: str, path: str):
+    s3.download_file(S3_BUCKET, s3_key, path)
+    return path
+
+def emit_snapshot_ready(payload: dict):
+    sqs.send_message(QueueUrl=SQS_SNAPSHOT_QUEUE_URL, MessageBody=json.dumps(payload))
+
+def _progress(pass_no: int, payload: dict):
+    if PROGRESS_LOG_JSON:
+        out = {"event":"progress","pass":pass_no, **payload}
+        logging.info(json.dumps(out, separators=(",",":")))
+    else:
+        kv = " ".join(f"{k}={v}" for k,v in payload.items())
+        logging.info(f"[progress] pass={pass_no} {kv}")
+
+def _start_visibility_heartbeat(queue_url: str, receipt_handle: str):
+    if SQS_VIS_HEARTBEAT_SEC <= 0:
+        return lambda: None
+    stop_ev = threading.Event()
+    def beat():
+        # initial small delay to avoid immediate churn
+        next_delay = SQS_VIS_HEARTBEAT_SEC
+        while not stop_ev.wait(next_delay):
+            try:
+                sqs.change_message_visibility(
+                    QueueUrl=queue_url, ReceiptHandle=receipt_handle, VisibilityTimeout=SQS_VIS_TIMEOUT
+                )
+                next_delay = SQS_VIS_HEARTBEAT_SEC
+            except Exception as e:
+                logging.warning("[heartbeat] change_visibility failed: %s", e)
+                next_delay = min(SQS_VIS_HEARTBEAT_SEC, 30)
+    t = threading.Thread(target=beat, daemon=True)
+    t.start()
+    return stop_ev.set
+
+def handle_process_video(body: dict):
+    vid         = body["video_id"]
+    ws_id       = body["workspace_id"]
+    ws_code     = body["workspace_code"]
+    cam_code    = body["camera_code"]
+    s3_key_raw  = body["s3_key_raw"]
+    frame_stride= int(body.get("frame_stride", FRAME_STRIDE))
+    recorded_at = body.get("recordedAt")
+
+    set_status(vid, "processing")
+
+    local = f"/tmp/{vid}.mp4"
+    download_to_tmp(s3_key_raw, local)
+
+    det = YoloDetector()
+    trk = DeepSortTracker()
+
+    cap = cv2.VideoCapture(local)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
+    if fps <= 0: fps = 25.0
+    W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)); H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    iters_total  = math.ceil(total_frames / frame_stride) if total_frames > 0 else None
+
+    best = BestFrameKeeper(W, H)
+    frame_to_boxes = defaultdict(list)  # frame_idx -> [(tid, tlbr), ...]
+
+    # ---- PASS 1: read → infer → track ----
+    t0 = time.time()
+    last_log_t = t0
+    iters = 0
+    last_dets = 0
+
+    frame_idx = -1
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        frame_idx += 1
+        if frame_stride > 1 and (frame_idx % frame_stride != 0):
+            continue
+
+        dets = det.infer(frame)           # [([x,y,w,h], conf, cls), ...]
+        last_dets = len(dets)
+        tracks = trk.update(dets, frame)  # [{"id", "tlbr", "conf", "cls"}, ...]
+
+        # collect for neighbor-aware crops later
+        for t in tracks:
+            frame_to_boxes[frame_idx].append((int(t["id"]), tuple(map(int, t["tlbr"]))))
+
+        # feed best-frame keeper
+        for t in tracks:
+            best.consider(tid=t["id"], frame_idx=frame_idx, bbox=t["tlbr"], conf=t["conf"], cls_id=t["cls"])
+
+        iters += 1
+
+        now = time.time()
+        if now - last_log_t >= PROGRESS_LOG_INTERVAL_SEC:
+            elapsed = now - t0
+            iter_sec = round(iters / max(elapsed, 1e-6), 2)
+            eta_str = "n/a"
+            if iters_total and iters > 0:
+                remain = max(iters_total - iters, 0)
+                eta_sec = remain / max(iter_sec, 1e-6)
+                eta_str = f"{int(eta_sec)}s"
+            _progress(1, {
+                "iters": iters,
+                "iters_total": iters_total if iters_total else -1,
+                "iter_sec": iter_sec,
+                "fps_approx": round(fps,2),
+                "dets_last": last_dets,
+                "ETA": eta_str
+            })
+            last_log_t = now
+
+    cap.release()
+
+    # ---- PASS 2: emit snapshots ----
+    cap = cv2.VideoCapture(local)
+    emit_count = 0
+    t_pass2 = time.time()
+    last_log_t2 = t_pass2
+    ready_items = best.items_ready()
+    total_ready = len(ready_items)
+
+    for tid, rec in ready_items:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, rec.frame_idx)
+        ok, frame = cap.read()
+        if not ok:
+            continue
+
+        # neighbor-aware margin
+        neighbors = [tb for (oid, tb) in frame_to_boxes.get(rec.frame_idx, []) if int(oid) != int(tid)]
+        m = choose_margin_for_neighbors(rec.bbox, neighbors, W, H, base_margin=None)
+
+        offset_ms = ms_from_frame(rec.frame_idx, fps)
+        key_rel = build_snapshot_key(
+            user_id="demo_user",
+            workspace_id=ws_id, video_id=vid,
+            workspace_code=ws_code, camera_code=cam_code,
+            track_id=tid, offset_ms=offset_ms
+        )
+        save_and_upload_snapshot(frame, rec.bbox, s3, S3_BUCKET, key_rel, margin=m)
+
+        snapshot_uri = f"s3://{S3_BUCKET}/{key_rel}"
+        yolo_type = CLASS_NAMES[rec.cls_id] if 0 <= rec.cls_id < len(CLASS_NAMES) else "VEHICLE"
+
+        emit_snapshot_ready({
+            "event": "SNAPSHOT_READY",
+            "video_id": vid,
+            "workspace_id": ws_id,
+            "workspace_code": ws_code,
+            "camera_code": cam_code,
+            "track_id": tid,
+            "snapshot_s3_key": snapshot_uri,
+            "recordedAt": recorded_at,
+            "detectedIn": offset_ms,
+            "detectedAt": iso_add_ms(recorded_at, offset_ms) if recorded_at else None,
+            "yolo_type": yolo_type
+        })
+        emit_count += 1
+
+        now = time.time()
+        if now - last_log_t2 >= PROGRESS_LOG_INTERVAL_SEC:
+            elapsed2 = now - t_pass2
+            snaps_sec = round(emit_count / max(elapsed2, 1e-6), 2)
+            _progress(2, {
+                "emitted": emit_count,
+                "total": total_ready,
+                "snapshots_sec": snaps_sec,
+                "elapsed_sec": int(elapsed2)
+            })
+            last_log_t2 = now
+
+    cap.release()
+    set_status(vid, "done")
+    logging.info("emitted %d snapshots for VID=%s", emit_count, vid)
+
+def run():
+    logging.info("polling: %s at %s", SQS_VIDEO_QUEUE_URL, utcnow_iso())
+    while True:
+        rs = sqs.receive_message(
+            QueueUrl=SQS_VIDEO_QUEUE_URL,
+            MaxNumberOfMessages=1,
+            WaitTimeSeconds=20,
+            VisibilityTimeout=max(SQS_VIS_TIMEOUT, 300) if SQS_VIS_HEARTBEAT_SEC > 0 else 300
+        )
+        for m in rs.get("Messages", []):
+            rh = m["ReceiptHandle"]
+            payload = None
+            stop_hb = lambda: None
+            try:
+                body = json.loads(m["Body"])
+                payload = body if isinstance(body, dict) else json.loads(body)
+                if payload.get("event") != "PROCESS_VIDEO":
+                    sqs.delete_message(QueueUrl=SQS_VIDEO_QUEUE_URL, ReceiptHandle=rh)
+                    continue
+                # start heartbeat while processing
+                stop_hb = _start_visibility_heartbeat(SQS_VIDEO_QUEUE_URL, rh)
+                handle_process_video(payload)
+                stop_hb()
+                sqs.delete_message(QueueUrl=SQS_VIDEO_QUEUE_URL, ReceiptHandle=rh)
+            except KeyboardInterrupt:
+                stop_hb()
+                raise
+            except Exception as e:
+                stop_hb()
+                err = f"{type(e).__name__}: {e}"
+                logging.error("ERROR: %s", err)
+                logging.error(traceback.format_exc())
+                try:
+                    set_status(payload.get("video_id","00000000-0000-0000-0000-000000000000"), "error", err=err)
+                except Exception:
+                    pass
+                # leave message for retry / DLQ
+
+if __name__ == "__main__":
+    try:
+        print(f"[worker_video] polling: {SQS_VIDEO_QUEUE_URL} at {utcnow_iso()}")
+        run()
+    except KeyboardInterrupt:
+        print("bye")

@@ -1,0 +1,87 @@
+import os
+from typing import List, Tuple, Dict, Any
+
+import numpy as np
+
+# Ultralytics and OpenCV are runtime deps (installed in the API venv)
+from ultralytics import YOLO
+
+# 17 PH vehicle classes (index = class id)
+CLASS_NAMES = [
+    "Car", "SUV", "Pickup", "Van", "Utility Vehicle", "Motorcycle",
+    "Bicycle", "E-Bike", "Pedicab", "Tricycle", "Jeepney",
+    "E-Jeepney", "Bus", "Carousel Bus", "Light Truck",
+    "Container Truck", "Special Vehicle"
+]
+
+class YoloDetector:
+    """
+    Thin adapter around Ultralytics YOLOv8 that returns detections in a format
+    compatible with DeepSORT update() in your worker:
+        dets = [([x, y, w, h], conf, cls_id), ...]
+    """
+    def __init__(
+        self,
+        weights_path: str | None = None,
+        conf: float | None = None,
+        iou: float | None = None,
+        imgsz: int | None = None,
+        device: str | None = None,
+    ) -> None:
+        self.weights_path = weights_path or os.getenv("YOLO_WEIGHTS") or "yolov8n.pt"
+        self.conf = float(os.getenv("YOLO_CONF", str(conf if conf is not None else 0.35)))
+        self.iou  = float(os.getenv("YOLO_IOU",  str(iou  if iou  is not None else 0.45)))
+        self.imgsz = int(os.getenv("YOLO_IMGSZ", str(imgsz if imgsz is not None else 640)))
+        # Respect existing worker default (CPU) unless explicitly provided
+        self.device = device or os.getenv("ULTRALYTICS_DEVICE") or "cpu"
+
+        # Lazy-loaded model
+        self._model: YOLO | None = None
+
+    def _ensure_model(self) -> YOLO:
+        if self._model is None:
+            self._model = YOLO(self.weights_path)
+            # Device is applied per predict call by Ultralytics; keeping it for clarity
+        return self._model
+
+    def infer(self, frame: np.ndarray) -> List[Tuple[list, float, int]]:
+        """
+        Returns: list of ([x, y, w, h], conf, cls_id)
+        - Only valid, in-frame boxes are kept (basic size/aspect sanity).
+        """
+        model = self._ensure_model()
+        res = model.predict(
+            source=frame,
+            imgsz=self.imgsz,
+            conf=self.conf,
+            iou=self.iou,
+            verbose=False,
+            device=self.device
+        )[0]
+
+        dets: List[Tuple[list, float, int]] = []
+        H, W = frame.shape[:2]
+        if res.boxes is None:
+            return dets
+
+        for box in res.boxes:
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            conf = float(box.conf[0])
+            cls_id = int(box.cls[0]) if box.cls is not None else -1
+
+            # Basic validity checks (match worker expectations)
+            if x2 <= x1 or y2 <= y1:
+                continue
+            if x2 <= 0 or y2 <= 0 or x1 >= W or y1 >= H:
+                continue
+            w, h = x2 - x1, y2 - y1
+            if w < 10 or h < 10:
+                continue
+            # Gentle aspect sanity to avoid thin garbage boxes
+            ar = w / max(h, 1)
+            if ar > 6 or ar < 0.15:
+                continue
+
+            dets.append(([x1, y1, w, h], conf, cls_id))
+
+        return dets

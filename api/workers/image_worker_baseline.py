@@ -1,3 +1,4 @@
+from api.analysis.contracts import parse_analyze_image_message
 import os, io, json, time, traceback, base64, decimal
 from datetime import datetime, timezone
 from typing import Optional, Tuple, Dict, Any
@@ -8,12 +9,12 @@ import botocore
 import psycopg2, psycopg2.extras
 
 # --- engine & contracts -------------------------------------------------------
-from analysis import engine as E
+from api.analysis import engine as E
 try:
-    from contracts import parse_analyze_image_message  # your canonical contract
+    pass
 except Exception:
     # Fallback parser (lenient): expects either {"s3_uri": "...", "workspace_id": "...", "analysis_id": ...}
-    def parse_analyze_image_message(body: str) -> Dict[str, Any]:
+    def __legacy__parse_analyze_image_message(body: str) -> Dict[str, Any]:
         d = json.loads(body)
         # allow simple forms or nested {"src":{"s3_uri":...}}
         s3_uri = d.get("s3_uri") or (d.get("src", {}) or {}).get("s3_uri")
@@ -35,11 +36,13 @@ SQS_URL    = os.getenv("SQS_ANALYSIS_BASELINE_URL")  # REQUIRED for prod loop
 VIS_TIMEOUT = int(os.getenv("SQS_VIS_TIMEOUT", "120"))
 WAIT_SECS   = int(os.getenv("SQS_WAIT_SECS", "20"))
 ENABLE_ANNOTATION = os.getenv("ENABLE_ANNOTATION", "1") not in ("0", "false", "False")
-DEST_BUCKET = os.getenv("RESULTS_S3_BUCKET")  # optional: default to input bucket if unset
+DEST_BUCKET = os.getenv("RESULTS_S3_BUCKET") or os.getenv("S3_BUCKET")  # optional: default to input bucket if unset
 JPEG_Q = int(os.getenv("JPEG_QUALITY", "90"))
 
 # DB: either DATABASE_URL or discrete vars
-DB_URL   = os.getenv("DATABASE_URL")
+DB_URL   = (os.getenv("DATABASE_URL") or os.getenv("DB_URL"))
+if DB_URL:
+    DB_URL = DB_URL.replace("postgresql+psycopg2","postgresql")
 DB_HOST  = os.getenv("DB_HOST")
 DB_PORT  = os.getenv("DB_PORT", "5432")
 DB_NAME  = os.getenv("DB_NAME")
@@ -107,7 +110,7 @@ def _update_parent_status(conn, analysis_id: int):
                 WHEN (SELECT COUNT(*) FROM image_analysis_results r
                       WHERE r.analysis_id=a.id AND r.model_variant IN ('baseline','cmt')) >= 2
                 THEN 'done' ELSE 'processing' END
-            WHERE a.analysis_no = %s;
+            WHERE a.id = %s;
         """, (analysis_id,))
 
 # --- s3 helpers ----------------------------------------------------------------
@@ -176,11 +179,27 @@ def _warm_model():
 def _process_one_message(body: str, receipt_handle: str):
     msg = parse_analyze_image_message(body)
     ws  = msg["workspace_id"]
-    aid = int(msg["analysis_id"])
-    src_bucket, src_key = _parse_s3_uri(msg["s3_uri"])
+    aid = msg["analysis_id"]
+    src_bucket, src_key = _parse_s3_uri(msg["input_image_s3_uri"])
 
     # bytes → inference
     t0 = time.time()
+    if not src_key:
+
+        # Skip bad payloads (e.g., empty S3 key); delete message and continue
+
+        try:
+
+            _sqs.delete_message(QueueUrl=(SQS_URL if 'SQS_URL' in globals() else QUEUE_URL), ReceiptHandle=receipt_handle)
+
+        except Exception:
+
+            pass
+
+        log("WARN","bad_message", note="empty_s3_key")
+
+        return
+
     img_bytes = _s3_get_bytes(src_bucket, src_key)
     dets, timings, metrics = E.run_inference(img_bytes, variant=VARIANT, analysis_id=f"job_{aid}_{VARIANT}")
 
@@ -244,7 +263,7 @@ def main():
     log("INFO","start", note="worker starting")
     _warm_model()
     if not SQS_URL:
-        log("WARN","no_queue_url","Set SQS_ANALYSIS_BASELINE_URL to enable the loop.")
+        log("ERROR","no_queue_url", note="Set SQS_ANALYSIS_BASELINE_URL to enable the loop.")
         return
     while True:
         try:

@@ -613,13 +613,25 @@ def load_model(variant:str)->Tuple[nn.Module, Dict[str,Any]]:
     return model, report
 
 # Keep Phase 1 self-test runner for easy smoke
-def run_inference(image_bytes: bytes, variant: str, enable_color: bool=False, enable_plate: bool=False) -> Dict[str, Any]:
-    # For now: we only demonstrate model build + heads; actual vision pipeline comes later.
-    img = Image.open(BytesIO(image_bytes)).convert("RGB")
+def run_inference(image_bytes: bytes, variant: str, enable_color: bool=False, enable_plate: bool=False):
+    # Minimal demo inference that returns a tuple: (dets, timings, metrics)
+    from io import BytesIO as _BytesIO
+    img = Image.open(_BytesIO(image_bytes)).convert("RGB")
     model, rep = load_model(variant)
-    _ = (img.width, img.height)  # placeholder
-    return {"type":"CAR","make":"TOYOTA","model":"FORTUNER","veh_box":(10,10,200,120),
-            "boxes":[(10,10,200,120)], "_timing":{"total_ms":1,"per_stage":[]}, "_loader_report":rep}
+    # Demo detections (structure the worker expects)
+    dets = {
+        "type": "CAR", "make": "TOYOTA", "model": "FORTUNER",
+        "veh_box": (10,10,200,120),
+        "boxes": [(10,10,200,120)],
+        "_timing": {"total_ms": 1, "per_stage": []},
+        "_loader_report": rep
+    }
+    # Worker expects timings.get("total")
+    _t = dets.get("_timing") or {}
+    total_ms = int(_t.get("total_ms", 0))
+    timings = {"total": total_ms, "per_stage": _t.get("per_stage", [])}
+    metrics = {"latency_ms": total_ms, "gflops": None, "mem_gb": None}
+    return dets, timings, metrics
 
 if __name__ == "__main__":
     # Quick SSOT smoke (no bundles)

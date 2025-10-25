@@ -1,0 +1,434 @@
+#!/usr/bin/env python3
+"""
+CVITX One-File Video Worker (YOLOv8 + DeepSORT)
+
+- All knobs are plain variables below (no env).
+- Consumes PROCESS_VIDEO from SQS and outputs SNAPSHOT_READY to SQS.
+- Loads Ultralytics YOLOv8, tracks with DeepSORT.
+- One best 640x640 snapshot per track (square crop with padding, then resize).
+- Preserves your S3 path pattern and exact message contract.
+- Optional DB status updates (set USE_DB=True).
+
+CLI:
+  python yolo_worker.py --poll
+  python yolo_worker.py --process-payload '{"event":"PROCESS_VIDEO",...}'
+  python yolo_worker.py --process-payload-file payload.json
+"""
+
+import os, sys, json, re, logging, argparse
+from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
+from typing import Dict, List, Tuple, Optional
+
+import boto3
+import numpy as np
+import cv2
+
+# Ultralytics YOLO
+try:
+    from ultralytics import YOLO
+except Exception as e:
+    print("Ultralytics not installed or failed to import. pip install ultralytics", file=sys.stderr)
+    raise
+
+# DeepSORT (deep_sort_realtime)
+try:
+    from deep_sort_realtime.deepsort_tracker import DeepSort
+except Exception as e:
+    print("deep_sort_realtime not installed. pip install deep-sort-realtime", file=sys.stderr)
+    raise
+
+# Optional DB (set USE_DB = True and provide DB_URL)
+try:
+    from sqlalchemy import create_engine, text
+except Exception:
+    create_engine = None
+    text = None
+
+# =========================
+# Configuration (NO ENVs)
+# =========================
+AWS_REGION               = "ap-southeast-2"
+S3_BUCKET                = "cvitx-uploads-dev-jdfirme"   # <<< set to your bucket if different
+SQS_VIDEO_QUEUE_URL      = "https://sqs.ap-southeast-2.amazonaws.com/118730128890/cvitx-video-tasks"
+SQS_SNAPSHOT_QUEUE_URL   = "https://sqs.ap-southeast-2.amazonaws.com/118730128890/cvitx-snapshot-tasks"
+
+YOLO_WEIGHTS             = "yolov8n.pt"   # or /home/ubuntu/cvitx/models/round_01/weights/best.pt
+YOLO_DEVICE = "cuda:0"          # "cpu" or "cuda:0"
+YOLO_CONF_THRES          = 0.25
+YOLO_IOU_THRES           = 0.45
+YOLO_IMG_SIZE            = 640
+
+FRAME_STRIDE_DEFAULT     = 3
+VIRTUAL_PLAYBACK_SPEED   = 1.0            # affects timestamp math only
+
+DEEPSORT_MAX_AGE         = 50
+DEEPSORT_N_INIT          = 2
+DEEPSORT_MAX_IOU_DISTANCE= 0.8
+DEEPSORT_NN_BUDGET       = 200
+DEEPSORT_EMBEDDER        = "mobilenet"
+DEEPSORT_HALF            = False
+DEEPSORT_BGR             = True
+
+SNAPSHOT_PAD_FRACTION    = 0.10           # fraction of max(w,h)
+SNAPSHOT_SIZE            = 640
+JPG_QUALITY              = 95
+
+# Optional DB status updates
+USE_DB                   = False
+DB_URL                   = "postgresql://user:pass@host:5432/dbname"
+
+TMP_DIR = "/mnt/nvme/tmp"
+
+# Canonical vocabulary (deterministic)
+CLASS_NAMES: List[str] = [
+    "Car", "SUV", "Pickup", "Van", "Utility Vehicle", "Motorcycle",
+    "Bicycle", "E-Bike", "Pedicab", "Tricycle", "Jeepney",
+    "E-Jeepney", "Bus", "Carousel Bus", "Light Truck",
+    "Container Truck", "Special Vehicle"
+]
+CLASS_ID_MAP: Dict[int, int] = {}  # fill if checkpoint IDs differ from the list above
+
+# =========================
+# Logging & AWS clients
+# =========================
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [worker_video] %(message)s")
+log = logging.getLogger("worker_video")
+_sqs = boto3.client("sqs", region_name=AWS_REGION)
+_s3  = boto3.client("s3",  region_name=AWS_REGION)
+
+# =========================
+# Helpers
+# =========================
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+def iso_add_ms(iso_str: Optional[str], ms: Optional[int]) -> Optional[str]:
+    if not iso_str or ms is None: return None
+    try:
+        base = datetime.fromisoformat(iso_str.replace("Z","+00:00"))
+        return (base + timedelta(milliseconds=int(ms))).isoformat()
+    except Exception:
+        return None
+
+def ms_from_frame(frame_idx: int, fps: float) -> int:
+    if fps <= 0: return 0
+    return int(round((frame_idx / fps) * 1000.0))
+
+def parse_s3_uri_or_key(s3_key_raw: str) -> Tuple[str, str]:
+    if s3_key_raw.startswith("s3://"):
+        m = re.match(r"^s3://([^/]+)/(.+)$", s3_key_raw)
+        if not m: raise ValueError(f"Bad s3 uri: {s3_key_raw}")
+        return (m.group(1), m.group(2))
+    return (S3_BUCKET, s3_key_raw)
+
+def download_to(local_path: str, s3_key_raw: str):
+    bucket, key = parse_s3_uri_or_key(s3_key_raw)
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+    _s3.download_file(bucket, key, local_path)
+    return local_path
+
+def save_jpeg_local(path: str, image_bgr: np.ndarray, quality: int = JPG_QUALITY):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    cv2.imwrite(path, image_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)])
+
+def upload_jpeg_s3(local_path: str, key: str):
+    _s3.upload_file(local_path, S3_BUCKET, key, ExtraArgs={"ContentType":"image/jpeg","ACL":"private"})
+
+def emit_snapshot_ready(payload: dict):
+    _sqs.send_message(QueueUrl=SQS_SNAPSHOT_QUEUE_URL, MessageBody=json.dumps(payload))
+
+def set_status(engine, video_id: str, status: str, err: Optional[str] = None):
+    if not USE_DB or not engine: return
+    try:
+        with engine.begin() as conn:
+            if err:
+                conn.execute(text("UPDATE videos SET status=:s, updated_at=NOW(), error_msg=:e WHERE id=:id"),
+                             {"s":status, "e":err[:500], "id":video_id})
+            else:
+                conn.execute(text("UPDATE videos SET status=:s, updated_at=NOW(), error_msg=NULL WHERE id=:id"),
+                             {"s":status, "id":video_id})
+    except Exception as e:
+        log.warning("DB status update failed: %r", e)
+
+def clamp(v, lo, hi): return max(lo, min(hi, v))
+
+def square_crop_and_resize(frame_bgr: np.ndarray, tlbr: Tuple[int,int,int,int], pad_fraction: float = SNAPSHOT_PAD_FRACTION) -> np.ndarray:
+    H, W = frame_bgr.shape[:2]
+    l, t, r, b = tlbr
+    w = max(1, r - l); h = max(1, b - t)
+    side = int(round(max(w, h) * (1.0 + pad_fraction * 2.0)))
+    cx, cy = l + w / 2.0, t + h / 2.0
+    x1 = int(round(cx - side / 2.0)); y1 = int(round(cy - side / 2.0))
+    x2 = x1 + side; y2 = y1 + side
+    x1 = clamp(x1, 0, W - 1); y1 = clamp(y1, 0, H - 1)
+    x2 = clamp(x2, 1, W);     y2 = clamp(y2, 1, H)
+    crop = frame_bgr[y1:y2, x1:x2].copy()
+    return cv2.resize(crop, (SNAPSHOT_SIZE, SNAPSHOT_SIZE), interpolation=cv2.INTER_AREA)
+
+def is_valid_bbox(x1, y1, x2, y2, W, H) -> bool:
+    if x2 <= x1 or y2 <= y1: return False
+    if x2 <= 0 or y2 <= 0: return False
+    if x1 >= W or y1 >= H: return False
+    return True
+
+def quality_score(area_px: float, conf: float) -> float:
+    return float(area_px) * max(0.0, min(1.0, conf))
+
+def canonical_cls_id(raw_cls_id: int) -> int:
+    return CLASS_ID_MAP.get(raw_cls_id, raw_cls_id)
+
+# =========================
+# Track memory
+# =========================
+@dataclass
+class BestRecord:
+    frame_idx: int
+    tlbr: Tuple[int,int,int,int]
+    conf: float
+    cls_id: int
+    qscore: float
+
+class BestFrameKeeper:
+    def __init__(self):
+        self.best: Dict[int, BestRecord] = {}
+        self.votes: Dict[int, Dict[int, int]] = {}
+
+    def consider(self, tid: int, frame_idx: int, tlbr: Tuple[int,int,int,int], conf: float, cls_id: int):
+        l, t, r, b = tlbr
+        area = max(0, (r - l)) * max(0, (b - t))
+        q = quality_score(area, conf)
+        prev = self.best.get(tid)
+        if (prev is None) or (q > prev.qscore):
+            self.best[tid] = BestRecord(frame_idx=frame_idx, tlbr=tlbr, conf=conf, cls_id=cls_id, qscore=q)
+        votes = self.votes.setdefault(tid, {})
+        votes[cls_id] = votes.get(cls_id, 0) + 1
+
+    def items_ready(self):
+        return self.best.items()
+
+    def voted_class(self, tid: int) -> int:
+        votes = self.votes.get(tid, {})
+        if not votes: return -1
+        return sorted(votes.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+
+# =========================
+# Core Processing
+# =========================
+class Detector:
+    def __init__(self):
+        self.model = YOLO(YOLO_WEIGHTS)
+        try: self.model.to(YOLO_DEVICE)
+        except Exception: pass
+
+    def infer(self, frame_bgr: np.ndarray) -> List[Tuple[List[float], float, int]]:
+        results = self.model.predict(
+            source=frame_bgr, imgsz=YOLO_IMG_SIZE, conf=YOLO_CONF_THRES, iou=YOLO_IOU_THRES,
+            verbose=False, device=YOLO_DEVICE
+        )
+        H, W = frame_bgr.shape[:2]
+        out: List[Tuple[List[float], float, int]] = []
+        for r in results:
+            if not hasattr(r, "boxes"): continue
+            for box in r.boxes:
+                xyxy = box.xyxy[0].cpu().numpy().astype(float)
+                x1, y1, x2, y2 = xyxy.tolist()
+                conf = float(box.conf.item())
+                cls  = canonical_cls_id(int(box.cls.item())) if box.cls is not None else -1
+                if not is_valid_bbox(int(x1), int(y1), int(x2), int(y2), W, H): continue
+                tlwh = [x1, y1, (x2 - x1), (y2 - y1)]
+                out.append((tlwh, conf, cls))
+        return out
+
+class Tracker:
+    def __init__(self):
+        self.trk = DeepSort(
+            max_age=DEEPSORT_MAX_AGE, n_init=DEEPSORT_N_INIT,
+            max_iou_distance=DEEPSORT_MAX_IOU_DISTANCE, nn_budget=DEEPSORT_NN_BUDGET,
+            embedder=DEEPSORT_EMBEDDER, half=DEEPSORT_HALF, bgr=DEEPSORT_BGR,
+        )
+    def update(self, dets: List[Tuple[List[float], float, int]], frame_bgr: np.ndarray):
+        return self.trk.update_tracks(dets, frame=frame_bgr)
+
+# =========================
+# S3 key builder
+# =========================
+def build_snapshot_key(user_id: str, workspace_id: str, video_id: str,
+                       workspace_code: str, camera_code: str,
+                       track_id: int, offset_ms: int) -> str:
+    fn = f"{workspace_code}_{camera_code}_{int(track_id):06d}_{int(offset_ms):06d}.jpg"
+    return f"demo_user/{workspace_id}/{video_id}/snapshots/{fn}"
+
+# =========================
+# Main handler
+# =========================
+def handle_process_video(payload: dict) -> int:
+    required = ["event","video_id","workspace_id","workspace_code","camera_code","s3_key_raw"]
+    for k in required:
+        if k not in payload: raise ValueError(f"Missing required field '{k}' in PROCESS_VIDEO")
+    if payload.get("event") != "PROCESS_VIDEO": raise ValueError("Not a PROCESS_VIDEO payload")
+
+    video_id       = str(payload["video_id"])
+    workspace_id   = str(payload["workspace_id"])
+    workspace_code = str(payload["workspace_code"])
+    camera_code    = str(payload["camera_code"])
+    s3_key_raw     = str(payload["s3_key_raw"])
+    frame_stride   = int(payload.get("frame_stride", FRAME_STRIDE_DEFAULT))
+    recorded_at    = payload.get("recordedAt")
+
+    engine = None
+    if False and create_engine:  # leave False unless you enable DB
+        url = DB_URL.replace("postgresql+psycopg2://","postgresql://",1) if DB_URL.startswith("postgresql+psycopg2://") else DB_URL
+        engine = create_engine(url, pool_pre_ping=True, future=True)
+
+    set_status(engine, video_id, "processing")
+
+    local_path = os.path.join(TMP_DIR, f"{video_id}.mp4")
+    download_to(local_path, s3_key_raw)
+
+    det = Detector()
+    trk = Tracker()
+
+    cap = cv2.VideoCapture(local_path)
+    if not cap.isOpened(): raise RuntimeError(f"Failed to open video: {local_path}")
+
+    fps = float(cap.get(cv2.CAP_PROP_FPS)) or 0.0
+    if fps <= 0: fps = 25.0
+
+    best = BestFrameKeeper()
+    processed_idx = -1
+    absolute_idx  = -1
+
+    while True:
+        ok, frame = cap.read()
+        if not ok: break
+        absolute_idx += 1
+        if frame_stride > 1 and (absolute_idx % frame_stride != 0): continue
+        processed_idx += 1
+
+        dets = det.infer(frame)
+        tracks = trk.update(dets, frame)
+
+        ds_tlbr: List[Tuple[Tuple[int,int,int,int], float, int]] = []
+        for (tlwh, conf, cls_id) in dets:
+            x, y, w, h = tlwh
+            ds_tlbr.append(((int(x), int(y), int(x+w), int(y+h)), conf, int(cls_id)))
+
+        def iou(a,b):
+            ax1,ay1,ax2,ay2=a; bx1,by1,bx2,by2=b
+            x1,y1=max(ax1,bx1),max(ay1,by1)
+            x2,y2=min(ax2,bx2),min(ay2,by2)
+            iw,ih=max(0,x2-x1),max(0,y2-y1)
+            inter=iw*ih
+            if inter==0: return 0.0
+            areaA=max(1,(ax2-ax1))*max(1,(ay2-ay1))
+            areaB=max(1,(bx2-bx1))*max(1,(by2-by1))
+            return inter/float(areaA+areaB-inter+1e-9)
+
+        for t in tracks:
+            if not hasattr(t,"is_confirmed") or not t.is_confirmed(): continue
+            l,t0,r,b = map(int, t.to_ltrb())
+            best_conf, best_cls = 0.0, -1
+            for (bb, conf, cls_id) in ds_tlbr:
+                if iou((l,t0,r,b), bb) > 0.0 and conf > best_conf:
+                    best_conf, best_cls = conf, cls_id
+            if best_conf <= 0.0: continue
+            best.consider(tid=int(t.track_id), frame_idx=processed_idx, tlbr=(l,t0,r,b), conf=best_conf, cls_id=best_cls)
+
+    cap.release()
+
+    cap = cv2.VideoCapture(local_path)
+    emit_count = 0
+    effective_fps = fps / float(max(1e-6, VIRTUAL_PLAYBACK_SPEED))
+
+    for tid, rec in best.items_ready():
+        abs_seek = rec.frame_idx * max(1, frame_stride)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, abs_seek)
+        ok, frame = cap.read()
+        if not ok: continue
+
+        patch = square_crop_and_resize(frame, rec.tlbr, pad_fraction=SNAPSHOT_PAD_FRACTION)
+        local_snapshot = os.path.join(TMP_DIR, f"{video_id}_{tid:06d}_{rec.frame_idx:06d}.jpg")
+        save_jpeg_local(local_snapshot, patch, quality=JPG_QUALITY)
+
+        offset_ms = ms_from_frame(rec.frame_idx, effective_fps)
+
+        key_rel = build_snapshot_key(
+            user_id="demo_user", workspace_id=workspace_id, video_id=video_id,
+            workspace_code=workspace_code, camera_code=camera_code,
+            track_id=tid, offset_ms=offset_ms
+        )
+        upload_jpeg_s3(local_snapshot, key_rel)
+
+        voted_cls = best.voted_class(tid)
+        yolo_type = CLASS_NAMES[voted_cls] if 0 <= voted_cls < len(CLASS_NAMES) else "VEHICLE"
+
+        payload_out = {
+            "event": "SNAPSHOT_READY",
+            "video_id": video_id,
+            "workspace_id": workspace_id,
+            "workspace_code": workspace_code,
+            "camera_code": camera_code,
+            "track_id": int(tid),
+            "snapshot_s3_key": f"s3://{S3_BUCKET}/{key_rel}",
+            "recordedAt": recorded_at,
+            "detectedIn": int(offset_ms),
+            "detectedAt": iso_add_ms(recorded_at, offset_ms) if recorded_at else None,
+            "yolo_type": yolo_type
+        }
+        emit_snapshot_ready(payload_out)
+        emit_count += 1
+
+    cap.release()
+    set_status(None, video_id, "done")  # no-op unless you enable DB
+    log.info("emitted %d snapshots for VID=%s", emit_count, video_id)
+    return emit_count
+
+# =========================
+# Poll loop / CLI
+# =========================
+def poll_loop():
+    log.info("polling: %s at %s", SQS_VIDEO_QUEUE_URL, now_iso())
+    while True:
+        rs = _sqs.receive_message(
+            QueueUrl=SQS_VIDEO_QUEUE_URL,
+            MaxNumberOfMessages=1,
+            WaitTimeSeconds=20,
+            VisibilityTimeout=1800,
+        )
+        msgs = rs.get("Messages", [])
+        if not msgs: continue
+        for m in msgs:
+            rh = m["ReceiptHandle"]; payload = None
+            try:
+                body_raw = m["Body"]
+                body = json.loads(body_raw)
+                payload = body if isinstance(body, dict) else json.loads(body)
+                if payload.get("event") != "PROCESS_VIDEO":
+                    _sqs.delete_message(QueueUrl=SQS_VIDEO_QUEUE_URL, ReceiptHandle=rh)
+                    continue
+                handle_process_video(payload)
+                _sqs.delete_message(QueueUrl=SQS_VIDEO_QUEUE_URL, ReceiptHandle=rh)
+            except Exception as e:
+                log.error("ERROR: %s", e)
+                # leave for retry/DLQ
+
+def main():
+    ap = argparse.ArgumentParser(description="CVITX One-File YOLOv8+DeepSORT Worker")
+    g = ap.add_mutually_exclusive_group(required=True)
+    g.add_argument("--poll", action="store_true", help="Poll SQS for PROCESS_VIDEO messages")
+    g.add_argument("--process-payload", type=str, help="Inline JSON payload for PROCESS_VIDEO")
+    g.add_argument("--process-payload-file", type=str, help="Path to JSON payload for PROCESS_VIDEO")
+    args = ap.parse_args()
+
+    if args.poll: poll_loop(); return
+    if args.process_payload:
+        payload = json.loads(args.process_payload)
+        handle_process_video(payload); return
+    if args.process_payload_file:
+        with open(args.process_payload_file, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        handle_process_video(payload); return
+
+if __name__ == "__main__":
+    main()
