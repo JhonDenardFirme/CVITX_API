@@ -1,6 +1,7 @@
 from api.analysis.contracts import parse_analyze_image_message
 import os, io, json, time, traceback, base64, decimal
 from datetime import datetime, timezone
+import uuid
 from typing import Optional, Tuple, Dict, Any
 from PIL import Image, ImageDraw, ImageFont
 
@@ -73,6 +74,28 @@ def _connect():
         host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASS,
         connect_timeout=5, application_name=f"cvitx_{VARIANT}"
     )
+
+
+# --- id resolution -------------------------------------------------------------
+def _resolve_analysis_id(aid_raw, ws):
+    s = str(aid_raw).strip()
+    # UUID path
+    try:
+        return str(uuid.UUID(s))
+    except Exception:
+        pass
+    # analysis_no integer path
+    try:
+        no = int(s)
+    except Exception:
+        raise ValueError('analysis_id must be a UUID or integer analysis_no')
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute('SELECT id FROM public.image_analyses WHERE workspace_id=%s AND analysis_no=%s LIMIT 1', (ws, no))
+            row = cur.fetchone()
+            if not row:
+                raise ValueError(f'analysis_no {no} not found for workspace {ws}')
+            return str(row[0])
 
 UPSERT_SQL = """
 INSERT INTO image_analysis_results AS r (
@@ -215,8 +238,17 @@ def _warm_model():
 # --- core processing -----------------------------------------------------------
 def _process_one_message(body: str, receipt_handle: str):
     msg = parse_analyze_image_message(body)
-    ws  = msg["workspace_id"]
-    aid = msg["analysis_id"]
+    ws  = str(msg['workspace_id']).strip()
+    try:
+        aid = _resolve_analysis_id(msg['analysis_id'], ws)
+    except Exception as e:
+        log('WARN','bad_message', note=str(e))
+        try:
+            if 'SQS_URL' in globals() and SQS_URL and receipt_handle:
+                _sqs.delete_message(QueueUrl=SQS_URL, ReceiptHandle=receipt_handle)
+        except Exception:
+            pass
+        return
     src_bucket, src_key = _parse_s3_uri(msg["input_image_s3_uri"])
 
     # bytes → inference
