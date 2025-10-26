@@ -76,7 +76,7 @@ def _connect():
 
 UPSERT_SQL = """
 INSERT INTO image_analysis_results AS r (
-    analysis_id, model_variant, workspace_id,
+    analysis_id, model_variant, workspace_id, workspace_id,
     type, type_conf, make, make_conf, model, model_conf,
     parts, colors, plate_text, plate_conf,
     annotated_image_s3_key, vehicle_image_s3_key, plate_image_s3_key,
