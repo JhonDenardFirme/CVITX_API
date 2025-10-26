@@ -36,3 +36,6 @@ api/alembic.ini.bak
 api/.env.bak
 # model weights
 *.pt
+
+# editor/merge backups
+*.orig
