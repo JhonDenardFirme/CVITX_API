@@ -76,30 +76,67 @@ def _connect():
 
 UPSERT_SQL = """
 INSERT INTO image_analysis_results AS r (
-    
-    analysis_id, model_variant, workspace_id, type, type_conf, make, make_conf, model, model_conf, parts,
-    colors, plate_text, plate_conf, annotated_image_s3_key, vehicle_image_s3_key, plate_image_s3_key,
-    latency_ms, gflops, memory_usage, updated_at,
-
+    analysis_id,
+    model_variant,
+    workspace_id,
+    type,
+    type_conf,
+    make,
+    make_conf,
+    model,
+    model_conf,
+    parts,
+    colors,
+    plate_text,
+    plate_conf,
+    annotated_image_s3_key,
+    vehicle_image_s3_key,
+    plate_image_s3_key,
+    latency_ms,
+    gflops,
+    memory_usage,
+    updated_at
 )
 VALUES (
-    %(analysis_id)s, %(variant)s, %(workspace_id)s,
-    %(type)s, %(type_conf)s, %(make)s, %(make_conf)s, %(model)s, %(model_conf)s,
-    %(parts_jsonb)s, %(colors_jsonb)s, %(plate_text)s, %(plate_conf)s,
-    %(annotated_key)s, %(vehicle_key)s, %(plate_key)s,
-    %(latency_ms)s, %(gflops)s, %(mem_gb)s, NOW()
+    %(analysis_id)s,
+    %(variant)s,
+    %(workspace_id)s,
+    %(type)s,
+    %(type_conf)s,
+    %(make)s,
+    %(make_conf)s,
+    %(model)s,
+    %(model_conf)s,
+    %(parts_jsonb)s,
+    %(colors_jsonb)s,
+    %(plate_text)s,
+    %(plate_conf)s,
+    %(annotated_key)s,
+    %(vehicle_key)s,
+    %(plate_key)s,
+    %(latency_ms)s,
+    %(gflops)s,
+    %(mem_gb)s,
+    NOW()
 )
 ON CONFLICT (analysis_id, model_variant)
 DO UPDATE SET
-    type=EXCLUDED.type, type_conf=EXCLUDED.type_conf,
-    make=EXCLUDED.make, make_conf=EXCLUDED.make_conf,
-    model=EXCLUDED.model, model_conf=EXCLUDED.model_conf,
-    parts=EXCLUDED.parts, colors=EXCLUDED.colors,
-    plate_text=EXCLUDED.plate_text, plate_conf=EXCLUDED.plate_conf,
+    type=EXCLUDED.type,
+    type_conf=EXCLUDED.type_conf,
+    make=EXCLUDED.make,
+    make_conf=EXCLUDED.make_conf,
+    model=EXCLUDED.model,
+    model_conf=EXCLUDED.model_conf,
+    parts=EXCLUDED.parts,
+    colors=EXCLUDED.colors,
+    plate_text=EXCLUDED.plate_text,
+    plate_conf=EXCLUDED.plate_conf,
     annotated_image_s3_key=EXCLUDED.annotated_image_s3_key,
     vehicle_image_s3_key=EXCLUDED.vehicle_image_s3_key,
     plate_image_s3_key=EXCLUDED.plate_image_s3_key,
-    latency_ms=EXCLUDED.latency_ms, gflops=EXCLUDED.gflops, memory_usage=EXCLUDED.memory_usage,
+    latency_ms=EXCLUDED.latency_ms,
+    gflops=EXCLUDED.gflops,
+    memory_usage=EXCLUDED.memory_usage,
     updated_at=NOW();
 """
 
