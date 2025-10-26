@@ -27,5 +27,5 @@ def consolidated_show(analysis_id: UUID, presign: int = Query(1, ge=0, le=1), tt
                 raise HTTPException(status_code=404, detail="analysis not found")
             wid = row[0]
     # 307 so clients keep method + Authorization header; auth enforced by the target route
-    url = f"/workspaces/{wid}/image-analyses/{analysis_id}?presign={presign}&ttl={ttl}"
+    url = f"/workspaces/{wid}/image-analyses/{analysis_id}"
     return RedirectResponse(url=url, status_code=307)
