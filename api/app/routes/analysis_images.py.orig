@@ -73,27 +73,23 @@ def commit(workspace_id: str, body: CommitIn, me=Depends(require_user)):
         raise HTTPException(status_code=400, detail=f"Unsupported content_type {body.content_type}")
     if body.size_bytes is None or int(body.size_bytes) > 25 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (25MB max)")
-
     head = s3.head_object(Bucket=settings.s3_bucket, Key=body.key)
     actual_len = int(head.get("ContentLength", 0))
     actual_ct = head.get("ContentType", "")
-
     if actual_len != int(body.size_bytes):
         raise HTTPException(status_code=400, detail="Size mismatch with S3 object")
     if actual_ct != body.content_type:
-        raise HTTPException(status_code=400, detail=f"Content-Type mismatch (S3 has {actual_ct})")
-
-    with engine.begin() as conn:
-        _assert_workspace(conn, workspace_id, str(me.id))
-        no = _next_no(conn, workspace_id)
-        aid = str(uuid.uuid4())
-        conn.execute(text("""
-          INSERT INTO image_analyses (id, workspace_id, analysis_no, title, description,
-                                      input_image_s3_key, content_type, size_bytes, status)
-          VALUES (:id,:wid,:no,:title,:descr,:key,:ct,:size,'uploaded')
-        """), dict(id=aid, wid=workspace_id, no=no, title=body.title, descr=body.description,
-                   key=body.key, ct=body.content_type, size=body.size_bytes))
-    return {"id": aid, "analysis_no": no, "status": "uploaded"}
+      with engine.begin() as conn:
+          _assert_workspace(conn, workspace_id, str(me.id))
+          no = _next_no(conn, workspace_id)
+          aid = str(uuid.uuid4())
+          conn.execute(text("""
+            INSERT INTO image_analyses (id, workspace_id, analysis_no, title, description,
+                                        input_image_s3_key, content_type, size_bytes, status)
+            VALUES (:id,:wid,:no,:title,:descr,:key,:ct,:size,uploaded)
+          """), dict(id=aid, wid=workspace_id, no=no, title=body.title, descr=body.description,
+                     key=body.key, ct=body.content_type, size=body.size_bytes))
+      return {"id": aid, "analysis_no": no, "status": "uploaded"}
 
 @router.post("/{workspace_id}/image-analyses/{analysis_id}/enqueue")
 def enqueue(workspace_id: str, analysis_id: str, me=Depends(require_user)):
