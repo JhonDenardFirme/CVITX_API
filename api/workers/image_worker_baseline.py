@@ -31,7 +31,7 @@ VARIANT = "baseline"
 SVC     = "cvitx-worker"
 
 # --- envs ---------------------------------------------------------------------
-AWS_REGION = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "ap-southeast-1"
+AWS_REGION = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "ap-southeast-2"
 SQS_URL    = os.getenv("SQS_ANALYSIS_BASELINE_URL")  # REQUIRED for prod loop
 VIS_TIMEOUT = int(os.getenv("SQS_VIS_TIMEOUT", "120"))
 WAIT_SECS   = int(os.getenv("SQS_WAIT_SECS", "20"))
@@ -236,7 +236,7 @@ def _process_one_message(body: str, receipt_handle: str):
         "annotated_key": keys["annotated"],
         "vehicle_key":   keys["vehicle"],
         "plate_key":     keys["plate"],
-        "latency_ms": float(metrics.get("latency_ms") or timings.get("total") or 0.0),
+        "latency_ms": int(float(metrics.get("latency_ms") or timings.get("total") or 0.0)),
         "gflops": metrics.get("gflops"),
         "mem_gb": metrics.get("mem_gb"),
     }
