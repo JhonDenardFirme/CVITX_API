@@ -985,17 +985,16 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
 
     if ENABLE_COLOR:
         try:
-            from analysis import utils as _U
+            from api.analysis import utils as _U
             if hasattr(_U, "detect_vehicle_color") and veh_box is not None:
                 # crop and call
-                crop = _U.crop_by_xyxy(img, veh_box) if hasattr(_U, "crop_by_xyxy") else img.crop(tuple(map(int,veh_box)))
-                colors = _U.detect_vehicle_color(crop)
+                colors = _U.detect_vehicle_color(img, veh_box)
                 # Expected: list of dicts {name,fraction,conf} or similar (be tolerant)
                 if isinstance(colors, (list,tuple)):
                     out_colors=[]
                     for c in colors[:3]:
-                        if isinstance(c, dict) and "name" in c:
-                            out_colors.append({"name":str(c["name"]),
+                        if isinstance(c, dict) and ("name" in c or "base" in c):
+                            out_colors.append({"name":str(c.get("name") or c.get("base")),
                                                "fraction": float(c.get("fraction", 0.0)),
                                                "conf": float(c.get("conf", c.get("confidence", 0.0)))})
                         elif isinstance(c, (list,tuple)) and len(c)>=1:
@@ -1023,10 +1022,9 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
 
     if ENABLE_PLATE and not dets.get("plate_text"):
         try:
-            from analysis import utils as _U
+            from api.analysis import utils as _U
             if hasattr(_U, "read_plate_text") and veh_box is not None:
-                crop = _U.crop_by_xyxy(img, veh_box) if hasattr(_U, "crop_by_xyxy") else img.crop(tuple(map(int,veh_box)))
-                resp = _U.read_plate_text(crop)
+                resp = _U.read_plate_text(img, None)
                 if isinstance(resp, dict):
                     dets["plate_text"] = resp.get("text","") or resp.get("plate","") or ""
                     dets["plate_conf"] = float(resp.get("conf", resp.get("confidence", 0.0)))
