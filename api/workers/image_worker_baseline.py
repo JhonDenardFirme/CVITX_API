@@ -83,7 +83,7 @@ INSERT INTO image_analysis_results AS r (
     latency_ms, gflops, memory_usage, updated_at
 )
 VALUES (
-    %(analysis_id)s, %(variant)s,
+    %(analysis_id)s, %(variant)s, %(workspace_id)s,
     %(type)s, %(type_conf)s, %(make)s, %(make_conf)s, %(model)s, %(model_conf)s,
     %(parts_jsonb)s, %(colors_jsonb)s, %(plate_text)s, %(plate_conf)s,
     %(annotated_key)s, %(vehicle_key)s, %(plate_key)s,
@@ -225,6 +225,7 @@ def _process_one_message(body: str, receipt_handle: str):
 
     # db upsert
     payload = {
+        "workspace_id": ws,
         "analysis_id": aid, "variant": VARIANT,
         "type": dets.get("type"), "type_conf": dets.get("type_conf"),
         "make": dets.get("make"), "make_conf": dets.get("make_conf"),
