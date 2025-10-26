@@ -129,7 +129,7 @@ def detect_vehicle_color(image_pil: Image.Image, veh_box: Optional[Tuple[float,f
             "veh_box": [float(v) for v in veh_box] if veh_box else None,
             "max_colors": 3,
         }
-        headers = {"Authorization": "Bearer ***", "X-API-Key": api_key}
+        headers = {"Authorization": f"Bearer {api_key}", "X-API-Key": api_key}
         for _ in range(2):
             try:
                 r = requests.post(endpoint, json=payload, headers=headers, timeout=6)
@@ -170,9 +170,9 @@ def read_plate_text(image_pil: Image.Image, plate_box: Optional[Tuple[float,floa
         return {}
     try:
         import requests
-        crop = image_pil if plate_box is None else image_pil.crop(tuple(map(int, plate_box)))
-        payload = {"image_b64": _b64_jpeg(crop)}
-        headers = {"Authorization": "Bearer ***", "X-API-Key": api_key}
+        img_for_send = image_pil if plate_box is None else image_pil.crop(tuple(map(int, plate_box)))
+        payload = {"image_b64": _b64_jpeg(img_for_send)}
+        headers = {"Authorization": f"Bearer {api_key}", "X-API-Key": api_key}
         for _ in range(2):
             try:
                 r = requests.post(endpoint, json=payload, headers=headers, timeout=6)
