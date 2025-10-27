@@ -39,3 +39,11 @@ api/.env.bak
 
 # editor/merge backups
 *.orig
+# --- engine & env artifacts ---
+out_engine/
+backups/
+# --- model weights (do not commit) ---
+*.pth
+*.ckpt
+bundles/**/weights/**
+bundles/**/bundle.pt
