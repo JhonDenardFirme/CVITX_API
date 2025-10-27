@@ -1,5 +1,3 @@
-# ======================= START OF EC2 CODE ENGINE  =======================
-
 import os, io, json, time, hashlib, zipfile
 from collections import OrderedDict
 from typing import Dict, List, Tuple, Optional, Any
@@ -30,9 +28,6 @@ LOG = JsonLogger("cvitx-engine")
 # ==============================================================================
 # PHASE 2 — SSOT + label_maps adoption (+ allow-lists, regions/parts)
 # ==============================================================================
-# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-# NOTE: Vocab Builder: PRESERVED VERBATIM
-# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 # --- Regions & SSOT hierarchy (trimmed to keep file compact; add freely later) ---
 REGIONS: List[str] = ["Front","Side","Rear","Roof"]
@@ -263,9 +258,6 @@ def adopt_label_maps_into_globals(maps: dict, per_type_parts: Optional[Dict[str,
 # ==============================================================================
 # PHASE 4 — Model builder (backbone + heads sized by vocab)
 # ==============================================================================
-# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-# NOTE: Model builder: PRESERVED (no refactors)
-# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 def _best_gn_groups(C:int)->int:
     for g in (32,16,8,4,2,1):
@@ -412,9 +404,6 @@ def build_model(backbone_name:str)->CompositionalMobileViT:
 # ==============================================================================
 # PHASE 3 — Bundle loader (zip/dir) + alignment audits + sha256
 # ==============================================================================
-# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-# NOTE: Model loader: PRESERVED VERBATIM
-# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 def _glob_suffixes(glob_str: str)->List[str]:
     raw = (glob_str or "*.pt|*.pth|*.ckpt").split("|")
@@ -877,102 +866,6 @@ def _maybe_warmup(model: nn.Module, device:str, img_size:int, steps:int=WARMUP_S
     _WARMED.add(key)
     LOG.info("warmup_done", steps=int(steps), device=device)
 
-# ========================= NEW: LOCAL UTILS (no shared 'analysis.utils' required) ==================
-from typing import Sequence
-from PIL import ImageDraw, ImageStat, ImageOps
-
-def crop_by_xyxy(img: Image.Image, box: Tuple[float,float,float,float]) -> Image.Image:
-    """Robust clamp + crop using original-image coords."""
-    x1,y1,x2,y2 = [int(round(v)) for v in box]
-    x1 = max(0, min(img.width-1,  x1))
-    y1 = max(0, min(img.height-1, y1))
-    x2 = max(x1+1, min(img.width,  x2))
-    y2 = max(y1+1, min(img.height, y2))
-    return img.crop((x1,y1,x2,y2))
-
-def _color_name_from_rgb(r:int,g:int,b:int)->str:
-    # Coarse mapping for quick visual summaries.
-    mx = max(r,g,b); mn = min(r,g,b)
-    if mx < 40: return "black"
-    if mn > 200: return "white"
-    if abs(r-g)<15 and abs(g-b)<15:
-        return "gray"
-    if r>g and r>b:
-        return "red" if g<b else "orange"
-    if g>r and g>b:
-        return "green"
-    if b>r and b>g:
-        return "blue"
-    if r>200 and g>200 and b<80:
-        return "yellow"
-    if r>160 and b>160 and g<120:
-        return "magenta"
-    if g>160 and b>160 and r<120:
-        return "cyan"
-    return "color"
-
-def detect_vehicle_color(image_pil: Image.Image) -> List[Dict[str, float]]:
-    """
-    Lightweight dominant color detector (no external deps).
-    Returns: [{"name": str, "fraction": float, "conf": float}, ...]
-    """
-    im = image_pil.convert("RGB")
-    small = im.resize((96,96), Image.BILINEAR)
-    pal = small.convert("P", palette=Image.ADAPTIVE, colors=8).convert("RGB")
-    # Count pixels per unique color
-    data = _np.asarray(pal).reshape(-1,3)
-    uniq, counts = _np.unique(data, axis=0, return_counts=True)
-    total = counts.sum()
-    rows = []
-    for (r,g,b), c in sorted(zip(uniq, counts), key=lambda t:-t[1]):
-        frac = float(c)/float(total)
-        rows.append({"name": _color_name_from_rgb(int(r),int(g),int(b)),
-                     "fraction": frac,
-                     "conf": min(0.99, 0.5 + 0.5*frac)})
-    return rows[:3]
-
-def read_plate_text(image_pil: Image.Image) -> Dict[str, Any]:
-    """
-    Optional OCR via pytesseract if available; otherwise, returns empty result.
-    Output: {"text": str, "conf": float}
-    """
-    try:
-        import pytesseract
-    except Exception:
-        return {"text":"", "conf":0.0}
-    im = ImageOps.autocontrast(image_pil.convert("L"))
-    try:
-        data = pytesseract.image_to_data(im, output_type='dict')
-        words = [w for w,cnf in zip(data.get("text",[]), data.get("conf",[])) if (w and str(cnf).isdigit())]
-        confs = [float(c) for c in data.get("conf",[]) if str(c).isdigit()]
-        text = " ".join(words).strip()
-        conf = (sum(confs)/max(1,len(confs)))/100.0 if confs else 0.0
-        return {"text": text, "conf": conf}
-    except Exception:
-        txt = pytesseract.image_to_string(im).strip()
-        return {"text": txt, "conf": 0.0}
-
-def draw_overlay_on_square(
-    sq: Image.Image,
-    veh_box_sq: Optional[Tuple[float,float,float,float]],
-    parts_sq: Sequence[Tuple[Tuple[float,float,float,float], str, float]],
-    title: Optional[str]=None
-) -> Image.Image:
-    """Draw vehicle + part boxes on the square (letterboxed) image."""
-    im = sq.copy()
-    dr = ImageDraw.Draw(im)
-    if veh_box_sq is not None:
-        x1,y1,x2,y2 = [int(round(v)) for v in veh_box_sq]
-        dr.rectangle([x1,y1,x2,y2], outline=(255,165,0), width=3)
-        dr.text((x1, max(0,y1-14)), "vehicle", fill=(255,165,0))
-    for (x1,y1,x2,y2), name, score in parts_sq:
-        x1,y1,x2,y2 = [int(round(v)) for v in (x1,y1,x2,y2)]
-        dr.rectangle([x1,y1,x2,y2], outline=(0,255,255), width=2)
-        dr.text((x1, y1+2), f"{name}:{score:.2f}", fill=(0,255,255))
-    if title:
-        dr.text((6,6), title, fill=(255,255,255))
-    return im
-
 # ---------- Inference runner ----------
 def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Optional[str]=None):
     """
@@ -985,9 +878,7 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
         "colors": [{"name":str,"fraction":float,"conf":float}, ...],
         "plate_text": str, "plate_conf": float|0,
         "veh_box": (x1,y1,x2,y2) in original image coords (if available),
-        "plate_box": (x1,y1,x2,y2) (if available),
-        "_debug_parts_sq": [{"name":str,"conf":float,"box_sq":[x1,y1,x2,y2]}],  # ADDED (non-breaking)
-        "_debug_pad_scale": {"pad": [px,py], "scale": float}                    # ADDED (non-breaking)
+        "plate_box": (x1,y1,x2,y2) (if available)
       }
     """
     aid = analysis_id or f"an_{int(time.time()*1000)}_{random.randint(100,999)}"
@@ -1037,12 +928,11 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
     make_name  = (MAKES[m_id]  if m_id is not None and 0<=m_id<len(MAKES)  else None)
     model_name = (MODELS[k_id] if k_id is not None and 0<=k_id<len(MODELS) else None)
 
-    # parts + vehicle box
+    # parts
     P = len(PARTS)
     part_logits = out.get("part_logits")  # [B,P,H,W] or None
     bbox_preds  = out.get("bbox_preds")   # [B,4P,H,W] or compatible
     parts_list  = []
-    parts_debug_sq = []   # ADDED: store boxes for overlay
     veh_box_sq  = None
 
     if torch.is_tensor(part_logits):
@@ -1059,44 +949,6 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
         if veh_box_pred is not None:
             v = _veh_box_from_any(veh_box_pred, int(IMG_SIZE))
             if v is not None: veh_box_sq = tuple(float(v[0,i].item()) for i in range(4))
-        # NEW: per-part box resolve for overlay (best grid cell; decode if BP4 available; else heat fall-back)
-        BP4 = _unpack_bbox_to_BP4HW(bbox_preds, P, H, W) if torch.is_tensor(bbox_preds) else None
-        if BP4 is not None:
-            XYXY = _decode_dxdy_logwh_cell(BP4, H, W, int(IMG_SIZE))  # [B,P,4,H,W]
-        else:
-            XYXY = None
-        for p_idx in range(min(Pp, P)):
-            heat = probs[p_idx]  # [H,W]
-            flat = torch.softmax(heat.view(-1), dim=0)
-            arg  = int(torch.argmax(flat).item())
-            gi, gj = arg // W, arg % W
-            if XYXY is not None:
-                x1,y1,x2,y2 = [float(XYXY[0,p_idx,c,gi,gj].item()) for c in range(4)]
-            else:
-                # heat→box (coarse) using spatial moments
-                Hh, Ww = heat.shape
-                cw, ch = IMG_SIZE/float(Ww), IMG_SIZE/float(Hh)
-                prob = torch.softmax(heat.flatten()/0.8, dim=0).view(Hh,Ww)
-                r = torch.arange(Hh, dtype=torch.float32, device=prob.device)
-                c = torch.arange(Ww, dtype=torch.float32, device=prob.device)
-                pr, pc = prob.sum(1), prob.sum(0)
-                mu_r, mu_c = (pr*r).sum(), (pc*c).sum()
-                std_r = torch.sqrt((pr*(r-mu_r).pow(2)).sum().clamp_min(1e-6))
-                std_c = torch.sqrt((pc*(c-mu_c).pow(2)).sum().clamp_min(1e-6))
-                cx, cy = (mu_c+0.5)*cw, (mu_r+0.5)*ch
-                w, h = 3.2*std_c*cw, 3.2*std_r*ch
-                x1, y1 = float(cx-0.5*w), float(cy-0.5*h)
-                x2, y2 = float(cx+0.5*w), float(cy+0.5*h)
-            # clamp + min size
-            minw = 0.04*IMG_SIZE; minh = 0.04*IMG_SIZE
-            if (x2-x1) < minw:
-                cx = 0.5*(x1+x2); x1, x2 = cx-0.5*minw, cx+0.5*minw
-            if (y2-y1) < minh:
-                cy = 0.5*(y1+y2); y1, y2 = cy-0.5*minh, cy+0.5*minh
-            x1 = max(0, x1); y1 = max(0, y1); x2 = min(IMG_SIZE-1, x2); y2 = min(IMG_SIZE-1, y2)
-            parts_debug_sq.append({"name": PARTS[p_idx] if p_idx < len(PARTS) else f"part_{p_idx}",
-                                   "conf": float(scores[p_idx].item()),
-                                   "box_sq": [x1,y1,x2,y2]})
         if veh_box_sq is None and torch.is_tensor(bbox_preds):
             BP4 = _unpack_bbox_to_BP4HW(bbox_preds, P, H, W)
             veh_box_sq = _derive_vehicle_box_from_parts(part_logits[0], BP4, int(IMG_SIZE))
@@ -1123,13 +975,10 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
         "plate_conf": 0.0,
         "veh_box": veh_box,
         "plate_box": None,
-        # NEW non-breaking debug fields for overlay utilities:
-        "_debug_parts_sq": parts_debug_sq,
-        "_debug_pad_scale": {"pad":[float(pad[0]),float(pad[1])], "scale": float(scale)},
     }
     timer.tick("postproc")
 
-    # color (optional; local fallback if shared utils missing)
+    # color (optional; warn once if disabled/missing)
     global _COLOR_WARNED; 
     try: _COLOR_WARNED
     except NameError: _COLOR_WARNED = False
@@ -1138,43 +987,36 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
         try:
             from analysis import utils as _U
             if hasattr(_U, "detect_vehicle_color") and veh_box is not None:
+                # crop and call
                 crop = _U.crop_by_xyxy(img, veh_box) if hasattr(_U, "crop_by_xyxy") else img.crop(tuple(map(int,veh_box)))
                 colors = _U.detect_vehicle_color(crop)
+                # Expected: list of dicts {name,fraction,conf} or similar (be tolerant)
+                if isinstance(colors, (list,tuple)):
+                    out_colors=[]
+                    for c in colors[:3]:
+                        if isinstance(c, dict) and "name" in c:
+                            out_colors.append({"name":str(c["name"]),
+                                               "fraction": float(c.get("fraction", 0.0)),
+                                               "conf": float(c.get("conf", c.get("confidence", 0.0)))})
+                        elif isinstance(c, (list,tuple)) and len(c)>=1:
+                            out_colors.append({"name":str(c[0]),
+                                               "fraction": float(c[1]) if len(c)>1 else 0.0,
+                                               "conf": float(c[2]) if len(c)>2 else 0.0})
+                    dets["colors"] = out_colors
             else:
-                # LOCAL FALLBACK
-                colors = detect_vehicle_color(crop_by_xyxy(img, veh_box)) if veh_box is not None else []
-            if isinstance(colors, (list,tuple)):
-                out_colors=[]
-                for c in colors[:3]:
-                    if isinstance(c, dict) and "name" in c:
-                        out_colors.append({"name":str(c["name"]),
-                                           "fraction": float(c.get("fraction", 0.0)),
-                                           "conf": float(c.get("conf", c.get("confidence", 0.0)))})
-                    elif isinstance(c, (list,tuple)) and len(c)>=1:
-                        out_colors.append({"name":str(c[0]),
-                                           "fraction": float(c[1]) if len(c)>1 else 0.0,
-                                           "conf": float(c[2]) if len(c)>2 else 0.0})
-                dets["colors"] = out_colors
+                if not _COLOR_WARNED:
+                    LOG.warn("color_missing_impl", note="ENABLE_COLOR=1 but utils.detect_vehicle_color not found or no veh_box")
+                    _COLOR_WARNED = True
         except Exception as e:
-            # LOCAL FALLBACK if import failed outright
-            if veh_box is not None:
-                try:
-                    colors = detect_vehicle_color(crop_by_xyxy(img, veh_box))
-                    dets["colors"] = [{"name":str(c["name"]),
-                                       "fraction": float(c.get("fraction",0.0)),
-                                       "conf": float(c.get("conf",0.0))} for c in colors[:3]]
-                except Exception as ee:
-                    if not _COLOR_WARNED:
-                        LOG.warn("color_error", error=str(ee)); _COLOR_WARNED=True
-            elif not _COLOR_WARNED:
-                LOG.warn("color_missing_impl", note="ENABLE_COLOR=1 but no veh_box or utils"); _COLOR_WARNED=True
+            if not _COLOR_WARNED:
+                LOG.warn("color_error", error=str(e)); _COLOR_WARNED=True
     else:
         if not _COLOR_WARNED:
             LOG.warn("color_disabled", note="ENABLE_COLOR=0 → color stage skipped")
             _COLOR_WARNED = True
     timer.tick("color")
 
-    # plate (optional; local fallback if shared utils missing)
+    # plate (optional; warn once if disabled/missing)
     global _PLATE_WARNED;
     try: _PLATE_WARNED
     except NameError: _PLATE_WARNED=False
@@ -1185,25 +1027,20 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
             if hasattr(_U, "read_plate_text") and veh_box is not None:
                 crop = _U.crop_by_xyxy(img, veh_box) if hasattr(_U, "crop_by_xyxy") else img.crop(tuple(map(int,veh_box)))
                 resp = _U.read_plate_text(crop)
+                if isinstance(resp, dict):
+                    dets["plate_text"] = resp.get("text","") or resp.get("plate","") or ""
+                    dets["plate_conf"] = float(resp.get("conf", resp.get("confidence", 0.0)))
+                elif isinstance(resp, (list,tuple)) and resp:
+                    dets["plate_text"] = str(resp[0]); dets["plate_conf"] = float(resp[1]) if len(resp)>1 else 0.0
+                elif isinstance(resp, str):
+                    dets["plate_text"] = resp
             else:
-                # LOCAL FALLBACK
-                resp = read_plate_text(crop_by_xyxy(img, veh_box)) if veh_box is not None else {}
-            if isinstance(resp, dict):
-                dets["plate_text"] = resp.get("text","") or resp.get("plate","") or ""
-                dets["plate_conf"] = float(resp.get("conf", resp.get("confidence", 0.0)))
-            elif isinstance(resp, (list,tuple)) and resp:
-                dets["plate_text"] = str(resp[0]); dets["plate_conf"] = float(resp[1]) if len(resp)>1 else 0.0
-            elif isinstance(resp, str):
-                dets["plate_text"] = resp
-        except Exception as e:
-            # LOCAL FALLBACK if import failed entirely
-            try:
-                resp = read_plate_text(crop_by_xyxy(img, veh_box)) if veh_box is not None else {}
-                dets["plate_text"] = resp.get("text","")
-                dets["plate_conf"] = float(resp.get("conf", 0.0))
-            except Exception as ee:
                 if not _PLATE_WARNED:
-                    LOG.warn("plate_error", error=str(ee)); _PLATE_WARNED=True
+                    LOG.warn("plate_missing_impl", note="ENABLE_PLATE=1 but utils.read_plate_text not found or no veh_box")
+                    _PLATE_WARNED = True
+        except Exception as e:
+            if not _PLATE_WARNED:
+                LOG.warn("plate_error", error=str(e)); _PLATE_WARNED=True
     else:
         if not _PLATE_WARNED:
             LOG.warn("plate_disabled", note="ENABLE_PLATE=0 → plate stage skipped")
@@ -1230,4 +1067,3 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
     }
     return dets, timings, metrics
 
-# ======================== END OF EC2 CODE ENGINE ========================
