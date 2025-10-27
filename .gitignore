@@ -47,3 +47,4 @@ backups/
 *.ckpt
 bundles/**/weights/**
 bundles/**/bundle.pt
+# engine/env artifacts
