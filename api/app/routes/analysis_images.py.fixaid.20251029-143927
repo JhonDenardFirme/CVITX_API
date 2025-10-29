@@ -6,14 +6,6 @@ from pydantic import BaseModel
 from sqlalchemy import create_engine, text
 import boto3
 
-from uuid import UUID
-def _clean_uuid_for_path(raw: str) -> str:
-    s = str(raw or "")
-    s = s.lstrip("=")
-    s = s.split("?",1)[0]
-    s = s.split("&",1)[0]
-    return str(UUID(s))
-
 from app.auth.deps import require_user
 from app.config import settings
 from app.services.sqs import send_json
@@ -106,14 +98,12 @@ def commit(workspace_id: str, body: CommitIn, me=Depends(require_user)):
 
 @router.post("/{workspace_id}/image-analyses/{analysis_id}/enqueue")
 def enqueue(workspace_id: str, analysis_id: str, me=Depends(require_user)):
-    analysis_id = _clean_uuid_for_path(analysis_id)
-    aid = analysis_id  # normalized string UUID, keep legacy var alive
     with engine.begin() as conn:
         r = conn.execute(text("""
           SELECT analysis_no, input_image_s3_key
             FROM image_analyses
            WHERE id=:id AND workspace_id=:wid
-        """), {"id": aid, "wid": workspace_id}).mappings().first()
+        """), {"id": analysis_id, "wid": workspace_id}).mappings().first()
         if not r:
             raise HTTPException(404, "Analysis not found")
         payload = {
@@ -125,19 +115,17 @@ def enqueue(workspace_id: str, analysis_id: str, me=Depends(require_user)):
         }
         resp_b = send_json(Q_BASE, dict(payload, model_variant="baseline"))
         resp_c = send_json(Q_CMT,  dict(payload, model_variant="cmt"))
-        conn.execute(text("UPDATE image_analyses SET status='queued' WHERE id=:id"), {"id": aid})
+        conn.execute(text("UPDATE image_analyses SET status='queued' WHERE id=:id"), {"id": analysis_id})
     return {"ok": True, "status": "queued", "baseline": resp_b, "cmt": resp_c}
 
 @router.get("/{workspace_id}/image-analyses/{analysis_id}")
 def show(workspace_id: str, analysis_id: str, me=Depends(require_user)):
-    analysis_id = _clean_uuid_for_path(analysis_id)
-    aid = analysis_id  # normalized string UUID, keep legacy var alive
     with engine.begin() as conn:
         a = conn.execute(text("""
           SELECT id, analysis_no, input_image_s3_key, status, error_msg, created_at
             FROM image_analyses
            WHERE id=:id AND workspace_id=:wid
-        """), {"id": aid, "wid": workspace_id}).mappings().first()
+        """), {"id": analysis_id, "wid": workspace_id}).mappings().first()
         if not a:
             raise HTTPException(404, "Analysis not found")
 
@@ -148,7 +136,7 @@ def show(workspace_id: str, analysis_id: str, me=Depends(require_user)):
        latency_ms, gflops, memory_usage, status, error_msg
   FROM image_analysis_results
  WHERE analysis_id=:id
-        """), {"id": aid}).mappings().all()
+        """), {"id": analysis_id}).mappings().all()
 
     orig_url = s3.generate_presigned_url("get_object",
       Params={"Bucket": settings.s3_bucket, "Key": a["input_image_s3_key"]},
