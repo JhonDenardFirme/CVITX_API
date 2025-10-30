@@ -112,80 +112,81 @@ def detect_vehicle_color(image_pil: Image.Image, veh_box: Optional[Tuple[float,f
     global __COLOR_WARNED
     api_key = os.getenv("COLOR_UTILS_API_KEY") or os.getenv("OPENAI_API_KEY")
     endpoint = os.getenv("COLOR_UTILS_ENDPOINT")
-    if not api_key:
+    if not api_key or not endpoint:
         if not __COLOR_WARNED:
             __COLOR_WARNED = True
-            _log_json("WARN", "color_missing_key", note="ENABLE_COLOR=1 but no COLOR_UTILS_API_KEY/OPENAI_API_KEY provided")
-        return []
-    if not endpoint:
-        if not __COLOR_WARNED:
-            __COLOR_WARNED = True
-            _log_json("WARN", "color_endpoint_unset", note="No COLOR_UTILS_ENDPOINT set; skipping color stage")
+            _log_json("WARN", "color_adapter_skipped", note="missing COLOR_UTILS_API_KEY or COLOR_UTILS_ENDPOINT")
         return []
     try:
         import requests
-        payload = {
-            "image_b64": _b64_jpeg(image_pil if veh_box is None else image_pil.crop(tuple(map(int, veh_box)))),
-            "veh_box": [float(v) for v in veh_box] if veh_box else None,
-            "max_colors": 3,
-        }
-        headers = {"Authorization": "Bearer ***", "X-API-Key": api_key}
-        for _ in range(2):
-            try:
-                r = requests.post(endpoint, json=payload, headers=headers, timeout=6)
-                if r.status_code == 200:
-                    js = r.json()
-                    out = []
-                    for i in js.get("colors", [])[:3]:
-                        out.append({
-                            "base": i.get("base") or i.get("label"),
-                            "finish": i.get("finish"),
-                            "lightness": i.get("lightness"),
-                            "conf": i.get("conf"),
-                            "fraction": i.get("fraction")
-                        })
-                    return out
-                time.sleep(0.3)
-            except Exception:
-                time.sleep(0.2)
-        _log_json("WARN","color_timeout_or_error", note=f"http error or timeout at {endpoint}")
-        return []
+        crop = image_pil if veh_box is None else image_pil.crop(tuple(map(int, veh_box)))
+        payload = {"image_b64": _b64_jpeg(crop), "max_colors": 3}
+        headers = {"X-API-Key": api_key, "Authorization": "Bearer ***"}
+        r = requests.post(endpoint, json=payload, headers=headers, timeout=6)
+        if r.status_code != 200:
+            _log_json("WARN","color_http_error", code=r.status_code); return []
+        js = r.json() or {}
+        out = []
+        for i in (js.get("colors") or [])[:3]:
+            name = i.get("name") or i.get("base") or i.get("label")
+            if not name: continue
+            out.append({
+                "name": str(name),
+                "fraction": float(i.get("fraction", 0.0)),
+                "conf": float(i.get("conf", i.get("confidence", 0.0)))
+            })
+        return out
     except Exception:
         _log_json("WARN","color_adapter_error")
         return []
-
 def read_plate_text(image_pil: Image.Image, plate_box: Optional[Tuple[float,float,float,float]] = None) -> Dict[str, Any]:
-    global __PLATE_WARNED
-    api_key = os.getenv("PLATE_UTILS_API_KEY") or os.getenv("OPENAI_API_KEY")
-    endpoint = os.getenv("PLATE_UTILS_ENDPOINT")
-    if not api_key:
-        if not __PLATE_WARNED:
-            __PLATE_WARNED = True
-            _log_json("WARN", "plate_missing_key", note="ENABLE_PLATE=1 but no PLATE_UTILS_API_KEY/OPENAI_API_KEY provided")
-        return {}
-    if not endpoint:
-        if not __PLATE_WARNED:
-            __PLATE_WARNED = True
-            _log_json("WARN", "plate_endpoint_unset", note="No PLATE_UTILS_ENDPOINT set; skipping plate stage")
-        return {}
-    try:
-        import requests
-        crop = image_pil if plate_box is None else image_pil.crop(tuple(map(int, plate_box)))
-        payload = {"image_b64": _b64_jpeg(crop)}
-        headers = {"Authorization": "Bearer ***", "X-API-Key": api_key}
-        for _ in range(2):
-            try:
-                r = requests.post(endpoint, json=payload, headers=headers, timeout=6)
-                if r.status_code == 200:
-                    js = r.json()
-                    text = (js.get("text") or "").strip()
-                    conf = js.get("conf")
-                    return {"text": text, "conf": conf}
-                time.sleep(0.3)
-            except Exception:
-                time.sleep(0.2)
-        _log_json("WARN","plate_timeout_or_error", note=f"http error or timeout at {endpoint}")
-        return {}
-    except Exception:
-        _log_json("WARN","plate_adapter_error")
-        return {}
+    """
+    Tries custom microservice first (PLATE_UTILS_ENDPOINT + X-API-Key), then falls back to Plate Recognizer
+    if PLATE_RECOGNITION_API_KEY / PLATE_API_KEY / PLATE_RECOGNIZER_TOKEN is set.
+    Returns {"text": str, "conf": float} or {} on failure.
+    """
+    crop = image_pil if plate_box is None else image_pil.crop(tuple(map(int, plate_box)))
+
+    # (A) Custom microservice
+    ep  = os.getenv("PLATE_UTILS_ENDPOINT")
+    key = os.getenv("PLATE_UTILS_API_KEY") or os.getenv("OPENAI_API_KEY")
+    if ep and key:
+        try:
+            import requests
+            payload = {"image_b64": _b64_jpeg(crop)}
+            headers = {"X-API-Key": key, "Authorization": "Bearer ***"}
+            r = requests.post(ep, json=payload, headers=headers, timeout=8)
+            if r.ok:
+                js = r.json() or {}
+                text = (js.get("text") or js.get("plate") or "").strip().upper()
+                conf = js.get("conf", js.get("confidence"))
+                return {"text": text, "conf": float(conf) if conf is not None else 0.0}
+        except Exception:
+            pass  # fall through to (B)
+
+    # (B) Plate Recognizer direct REST
+    token = (os.getenv("PLATE_RECOGNITION_API_KEY")
+             or os.getenv("PLATE_API_KEY")
+             or os.getenv("PLATE_RECOGNIZER_TOKEN"))
+    if token:
+        try:
+            import requests, io
+            buf = io.BytesIO(); crop.convert("RGB").save(buf, "JPEG", quality=95)
+            files = {"upload": ("plate.jpg", buf.getvalue())}
+            base = os.getenv("PLATE_API_BASE", "https://api.platerecognizer.com/v1")
+            hdrs = {"Authorization": f"Token {token}"}
+            data = {}
+            regions = [r.strip() for r in (os.getenv("PLATE_REGIONS", "ph").split(",")) if r.strip()]
+            if regions: data["regions"] = ",".join(regions)
+            rr = requests.post(f"{base}/plate-reader/", headers=hdrs, data=data, files=files, timeout=12)
+            if rr.ok:
+                best = None
+                for res in (rr.json().get("results") or []):
+                    p = (res.get("plate") or "").upper()
+                    s = float(res.get("score") or 0.0)
+                    if p and (best is None or s > best[1]): best = (p, s)
+                if best: return {"text": best[0], "conf": best[1]}
+        except Exception:
+            pass
+
+    return {}

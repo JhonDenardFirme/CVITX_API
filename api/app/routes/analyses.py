@@ -5,12 +5,17 @@ from uuid import UUID
 import os, re
 
 from uuid import UUID
+
 def _clean_uuid_for_path(raw: str) -> str:
     s = str(raw or "")
     s = s.lstrip("=")
-    s = s.split("?",1)[0]
-    s = s.split("&",1)[0]
-    return str(UUID(s))
+    s = s.split("?", 1)[0]
+    s = s.split("&", 1)[0]
+    try:
+        return str(UUID(s))
+    except Exception:
+        raise HTTPException(status_code=400, detail={"error": "invalid_analysis_id", "value": raw})
+
 try:
     import psycopg2  # rely on existing dependency
 except Exception as e:
@@ -27,6 +32,7 @@ def _dsn_from_env() -> str:
 
 @router.get("/analyses/{analysis_id}")
 def consolidated_show(request: Request, analysis_id: str, presign: int = Query(1, ge=0, le=1), ttl: int = Query(3600, ge=60, le=86400)):
+    analysis_id = _clean_uuid_for_path(analysis_id)
     dsn = _dsn_from_env()
     with psycopg2.connect(dsn) as conn:
         with conn.cursor() as cur:

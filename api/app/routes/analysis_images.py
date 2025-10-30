@@ -8,12 +8,17 @@ from sqlalchemy import create_engine, text
 import boto3
 
 from uuid import UUID
+
 def _clean_uuid_for_path(raw: str) -> str:
     s = str(raw or "")
     s = s.lstrip("=")
-    s = s.split("?",1)[0]
-    s = s.split("&",1)[0]
-    return str(UUID(s))
+    s = s.split("?", 1)[0]
+    s = s.split("&", 1)[0]
+    try:
+        return str(UUID(s))
+    except Exception:
+        raise HTTPException(status_code=400, detail={"error": "invalid_analysis_id", "value": raw})
+
 
 from app.auth.deps import require_user
 from app.config import settings
