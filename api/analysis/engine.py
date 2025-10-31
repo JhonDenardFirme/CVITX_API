@@ -655,6 +655,28 @@ def run_inference(image_bytes: bytes, variant: str, enable_color: bool=False, en
     _t = dets.get("_timing") or {}
     total_ms = int(_t.get("total_ms", 0))
     timings = {"total": total_ms, "per_stage": _t.get("per_stage", [])}
+    # ---- PHASE 4 — vehicle box source summary ----
+    try:
+        veh_src = "veh_head" if (locals().get("veh_box_pred") is not None) else (
+            "parts_fallback" if torch.is_tensor(locals().get("bbox_preds")) else "heat_fallback"
+        )
+        LOG.info("decode_summary",
+                 kept_parts=int(len((dets.get("_debug_parts_sq") or []))) if isinstance(dets, dict) else None,
+                 grid=list(part_logits.shape[-2:]) if torch.is_tensor(part_logits) else None,
+                 veh_src=veh_src)
+    except Exception as _e:
+        LOG.warn("decode_summary_failed", error=str(_e))
+    # ---- PHASE 4 — vehicle box source summary ----
+    try:
+        veh_src = "veh_head" if (locals().get("veh_box_pred") is not None) else (
+            "parts_fallback" if torch.is_tensor(locals().get("bbox_preds")) else "heat_fallback"
+        )
+        LOG.info("decode_summary",
+                 kept_parts=int(len((dets.get("_debug_parts_sq") or []))) if isinstance(dets, dict) else None,
+                 grid=list(part_logits.shape[-2:]) if torch.is_tensor(part_logits) else None,
+                 veh_src=veh_src)
+    except Exception as _e:
+        LOG.warn("decode_summary_failed", error=str(_e))
     metrics = {"latency_ms": total_ms, "gflops": None, "mem_gb": None}
     return dets, timings, metrics
 
@@ -1023,7 +1045,7 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
 
     # preproc (PIL -> torch CHW float [0,1] -> letterbox -> BCHW)
     arr = _np.asarray(img)  # HWC uint8
-    tCHW = torch.from_numpy(arr).permute(2,0,1)  # CHW uint8
+    tCHW = torch.from_numpy(arr.copy()).permute(2,0,1)  # CHW uint8
     tCHW = tCHW.float()/255.0
     sq, pad, scale = s_letterbox_fit(tCHW, int(IMG_SIZE))  # CHW
     X = sq.unsqueeze(0).to(dev)  # BCHW
@@ -1054,6 +1076,7 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
     # parts + vehicle box
     P = len(PARTS)
     part_logits = out.get("part_logits")  # [B,P,H,W] or None
+    s_assert_head_grid_matches(type("CFG", (), {"img_size": int(IMG_SIZE)})(), part_logits, model)
     bbox_preds  = out.get("bbox_preds")   # [B,4P,H,W] or compatible
     parts_list  = []
     parts_debug_sq = []   # ADDED: store boxes for overlay
@@ -1073,44 +1096,97 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
         if veh_box_pred is not None:
             v = s_veh_box_from_any(veh_box_pred, int(IMG_SIZE))
             if v is not None: veh_box_sq = tuple(float(v[0,i].item()) for i in range(4))
-        # NEW: per-part box resolve for overlay (best grid cell; decode if BP4 available; else heat fall-back)
-        BP4 = s_unpack_BP4HW(bbox_preds, P, H, W) if torch.is_tensor(bbox_preds) else None
-        if BP4 is not None:
-            XYXY = s_decode_dxdy(BP4, H, W, int(IMG_SIZE))  # [B,P,4,H,W]
+        # --- BEGIN: Colab-parity gating for parts debug overlay ---
+        # Shapes and constants
+        P = len(PARTS)
+        B, Pp, H, W = part_logits.shape  # [B,P,H,W]
+        
+        # 1) Compute per-part heat maxima (sigmoided)
+        heat_map = torch.sigmoid(part_logits)[0]      # [P,H,W]
+        heat_max = heat_map.amax(dim=(-1, -2))        # [P]
+        
+        # 2) Blend with presence logits if available (Colab behavior)
+        pres_logits = out.get("part_present_logits")
+        pres_max = None
+        if torch.is_tensor(pres_logits):
+            pl = pres_logits
+            if pl.dim() == 4 and tuple(pl.shape[-2:]) == (H, W):
+                pres_max = torch.sigmoid(pl)[0].amax(dim=(-1, -2))  # [P]
+            else:
+                pres_max = torch.sigmoid(pl).view(B, -1)[0][:Pp]     # [P]
+        
+        # Blend (50/50). If presence not available, fall back to heat only.
+        if pres_max is not None and pres_max.shape[0] == heat_max.shape[0]:
+            conf_vec = 0.5 * heat_max + 0.5 * pres_max
         else:
-            XYXY = None
-        for p_idx in range(min(Pp, P)):
-            heat = probs[p_idx]  # [H,W]
-            flat = torch.softmax(heat.view(-1), dim=0)
+            conf_vec = heat_max
+        
+        # 3) Optional: restrict parts by predicted vehicle type
+        allowed_parts = None
+        if type_name is not None:
+            allowed_parts = set(TYPE_PART_TO_REGIONS.get(type_name, {}).keys())
+        
+        # 4) Keep = (optional type-mask) AND (confidence >= PART_TAU)
+        kept = []
+        for p_idx, sc in enumerate(conf_vec.tolist()):
+            if p_idx >= P: break
+            p_name = PARTS[p_idx]
+            if allowed_parts is not None and p_name not in allowed_parts:
+                continue
+            if float(sc) < float(PART_TAU):
+                continue
+            kept.append((p_idx, p_name, float(sc)))
+        
+        # 5) Top-K to avoid clutter
+        TOPK = 12
+        kept = sorted(kept, key=lambda t: t[2], reverse=True)[:TOPK]
+        
+        # 6) Decode a single box per kept part (best cell by heat)
+        parts_debug_sq = []
+        BP4 = s_unpack_BP4HW(bbox_preds, P, H, W) if torch.is_tensor(bbox_preds) else None
+        XYXY = s_decode_dxdy(BP4, H, W, int(IMG_SIZE)) if BP4 is not None else None
+        
+        for (p_idx, p_name, sc) in kept:
+            heat = heat_map[p_idx]  # [H,W]
+            flat = torch.softmax(heat.reshape(-1), dim=0)
             arg  = int(torch.argmax(flat).item())
             gi, gj = arg // W, arg % W
+        
             if XYXY is not None:
-                x1,y1,x2,y2 = [float(XYXY[0,p_idx,c,gi,gj].item()) for c in range(4)]
+                x1 = float(XYXY[0, p_idx, 0, gi, gj].item())
+                y1 = float(XYXY[0, p_idx, 1, gi, gj].item())
+                x2 = float(XYXY[0, p_idx, 2, gi, gj].item())
+                y2 = float(XYXY[0, p_idx, 3, gi, gj].item())
             else:
-                # heat→box (coarse) using spatial moments
-                Hh, Ww = heat.shape
-                cw, ch = IMG_SIZE/float(Ww), IMG_SIZE/float(Hh)
-                prob = torch.softmax(heat.flatten()/0.8, dim=0).view(Hh,Ww)
-                r = torch.arange(Hh, dtype=torch.float32, device=prob.device)
-                c = torch.arange(Ww, dtype=torch.float32, device=prob.device)
-                pr, pc = prob.sum(1), prob.sum(0)
-                mu_r, mu_c = (pr*r).sum(), (pc*c).sum()
-                std_r = torch.sqrt((pr*(r-mu_r).pow(2)).sum().clamp_min(1e-6))
-                std_c = torch.sqrt((pc*(c-mu_c).pow(2)).sum().clamp_min(1e-6))
-                cx, cy = (mu_c+0.5)*cw, (mu_r+0.5)*ch
-                w, h = 3.2*std_c*cw, 3.2*std_r*ch
-                x1, y1 = float(cx-0.5*w), float(cy-0.5*h)
-                x2, y2 = float(cx+0.5*w), float(cy+0.5*h)
-            # clamp + min size
-            minw = 0.04*IMG_SIZE; minh = 0.04*IMG_SIZE
-            if (x2-x1) < minw:
-                cx = 0.5*(x1+x2); x1, x2 = cx-0.5*minw, cx+0.5*minw
-            if (y2-y1) < minh:
-                cy = 0.5*(y1+y2); y1, y2 = cy-0.5*minh, cy+0.5*minh
-            x1 = max(0, x1); y1 = max(0, y1); x2 = min(IMG_SIZE-1, x2); y2 = min(IMG_SIZE-1, y2)
-            parts_debug_sq.append({"name": PARTS[p_idx] if p_idx < len(PARTS) else f"part_{p_idx}",
-                                   "conf": float(scores[p_idx].item()),
-                                   "box_sq": [x1,y1,x2,y2]})
+                x1,y1,x2,y2 = s_box_from_heatmap(heat, int(IMG_SIZE), gamma=3.2, temperature=0.8)
+        
+            # 7) Minimum size clamps
+            minw = 0.04 * IMG_SIZE
+            minh = 0.04 * IMG_SIZE
+            if (x2 - x1) < minw:
+                cx = 0.5 * (x1 + x2)
+                x1, x2 = cx - 0.5 * minw, cx + 0.5 * minw
+            if (y2 - y1) < minh:
+                cy = 0.5 * (y1 + y2)
+                y1, y2 = cy - 0.5 * minh, cy + 0.5 * minh
+        
+            # Clip to square
+            x1 = max(0.0, x1); y1 = max(0.0, y1)
+            x2 = min(float(IMG_SIZE - 1), x2); y2 = min(float(IMG_SIZE - 1), y2)
+        
+            parts_debug_sq.append({
+                "name": p_name,
+                "conf": sc,
+                "box_sq": [x1, y1, x2, y2],
+            })
+        
+        # Helpful log for live checks
+        try:
+            LOG.info("parts_debug_kept", type=str(type_name), kept=len(kept), total=int(Pp), topk=int(TOPK), tau=float(PART_TAU))
+        except Exception:
+            pass
+        # --- END: Colab-parity gating for parts debug overlay ---
+
         if veh_box_sq is None and torch.is_tensor(bbox_preds):
             BP4 = s_unpack_BP4HW(bbox_preds, P, H, W)
             veh_box_sq = _derive_vehicle_box_from_parts(part_logits[0], BP4, int(IMG_SIZE))
@@ -1241,7 +1317,18 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
         "mem_gb": float(mem_gb) if mem_gb is not None else None,
         "device": dev,
         "trained": bool(rep.get("trained", False)),
-    }
+      }
+    # ---- PHASE 4 — vehicle box source summary (real path) ----
+    try:
+        veh_src = "veh_head" if (locals().get("veh_box_pred") is not None or locals().get("veh_box_sq") is not None) else (
+            "parts_fallback" if torch.is_tensor(locals().get("bbox_preds")) else "heat_fallback"
+        )
+        LOG.info("decode_summary",
+                 kept_parts=int(len((dets.get("_debug_parts_sq") or []))) if isinstance(dets, dict) else None,
+                 grid=list(part_logits.shape[-2:]) if torch.is_tensor(part_logits) else None,
+                 veh_src=veh_src)
+    except Exception as _e:
+        LOG.warn("decode_summary_failed", error=str(_e))
     return dets, timings, metrics
 
 # ======================== END OF EC2 CODE ENGINE ========================
