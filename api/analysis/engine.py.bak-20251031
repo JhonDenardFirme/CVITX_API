@@ -12,20 +12,6 @@ import torch.nn.functional as F
 import timm
 from PIL import Image
 
-# === Shared geometry/decoding utils (alias as s_*) ===
-from .bbox_utils import (
-    letterbox_fit            as s_letterbox_fit,
-    invert_letterbox_box     as s_invert_letterbox_box,
-    _unpack_bbox_to_BP4HW    as s_unpack_BP4HW,
-    _decode_dxdy_logwh_cell  as s_decode_dxdy,
-    _veh_box_from_any        as s_veh_box_from_any,
-    _box_from_heatmap        as s_box_from_heatmap,
-    _ensure_min_box          as s_ensure_min_box,
-    blend_logits             as s_blend_logits,
-    cascade_infer            as s_cascade_infer,
-    assert_head_grid_matches as s_assert_head_grid_matches,
-)
-
 # ---- Local logger (kept) ------------------------------------------------------
 def _now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + f".{int((time.time()%1)*1000):03d}Z"
@@ -724,7 +710,7 @@ class StageTimer:
         return out
 
 # ---------- Letterbox + inverse mapping ----------
-def __legacy_letterbox_fit_chw(x: torch.Tensor, size:int):
+def _letterbox_fit_chw(x: torch.Tensor, size:int):
     # x: CHW float in [0,1] or uint8 0..255
     assert x.dim()==3 and x.shape[0] in (1,3), "expect CHW"
     B = x.unsqueeze(0)
@@ -739,7 +725,7 @@ def __legacy_letterbox_fit_chw(x: torch.Tensor, size:int):
     padB = F.pad(Bi, (left,right,top,bottom), value=0.0)
     return padB.squeeze(0), (left, top), sc
 
-def __legacy_inv_letterbox_xyxy(box, orig_w:int, orig_h:int, pad:tuple, scale:float):
+def _inv_letterbox_xyxy(box, orig_w:int, orig_h:int, pad:tuple, scale:float):
     if box is None: return None
     x1,y1,x2,y2 = [float(v) for v in (box.tolist() if torch.is_tensor(box) else box)]
     pw, ph = float(pad[0]), float(pad[1]); s = max(1e-12, float(scale))
@@ -750,7 +736,7 @@ def __legacy_inv_letterbox_xyxy(box, orig_w:int, orig_h:int, pad:tuple, scale:fl
     return (xo1,yo1,xo2,yo2)
 
 # ---------- BBox helpers ----------
-def __legacy_unpack_BP4HW(raw: torch.Tensor, P_expected:int, H:int, W:int):
+def _unpack_bbox_to_BP4HW(raw: torch.Tensor, P_expected:int, H:int, W:int):
     if raw is None or not torch.is_tensor(raw): return None
     if raw.dim()==4:
         B,C,Hh,Ww = raw.shape
@@ -768,7 +754,7 @@ def __legacy_unpack_BP4HW(raw: torch.Tensor, P_expected:int, H:int, W:int):
         return raw[:,: ,:P].permute(0,2,1,3,4)
     return None
 
-def __legacy_decode_dxdy_logwh_cell(BP4: torch.Tensor, H:int, W:int, img_size:int):
+def _decode_dxdy_logwh_cell(BP4: torch.Tensor, H:int, W:int, img_size:int):
     if BP4 is None: return None
     B,P,_4,Hh,Ww = BP4.shape
     if Hh!=H or Ww!=W or _4!=4: return None
@@ -784,7 +770,7 @@ def __legacy_decode_dxdy_logwh_cell(BP4: torch.Tensor, H:int, W:int, img_size:in
     x2, y2 = (cx+0.5*w).clamp(0, img_size-1), (cy+0.5*h).clamp(0, img_size-1)
     return torch.stack([x1,y1,x2,y2], dim=2)  # [B,P,4,H,W]
 
-def __legacy_veh_box_from_any(veh_pred: torch.Tensor, img_size:int):
+def _veh_box_from_any(veh_pred: torch.Tensor, img_size:int):
     if veh_pred is None or not torch.is_tensor(veh_pred): return None
     if veh_pred.dim()==2 and veh_pred.shape[1]==4:
         sig = veh_pred.sigmoid().float()
@@ -803,7 +789,7 @@ def _derive_vehicle_box_from_parts(part_logits: torch.Tensor, BP4: torch.Tensor,
     ys, xs = (idx // W), (idx % W)
     boxes_sq = []
     scores   = []
-    decoded = s_decode_dxdy(BP4, H, W, img_size)  # [B,P,4,H,W]
+    decoded = _decode_dxdy_logwh_cell(BP4, H, W, img_size)  # [B,P,4,H,W]
     if decoded is None: return None
     for p in range(P):
         y, x = int(ys[0,p]), int(xs[0,p])
@@ -1025,7 +1011,7 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
     arr = _np.asarray(img)  # HWC uint8
     tCHW = torch.from_numpy(arr).permute(2,0,1)  # CHW uint8
     tCHW = tCHW.float()/255.0
-    sq, pad, scale = s_letterbox_fit(tCHW, int(IMG_SIZE))  # CHW
+    sq, pad, scale = _letterbox_fit_chw(tCHW, int(IMG_SIZE))  # CHW
     X = sq.unsqueeze(0).to(dev)  # BCHW
     timer.tick("preproc")
 
@@ -1044,7 +1030,7 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
     lt = out.get("type_logits")
     lm = out.get("make_logits")
     lk = out.get("model_logits")
-    cascade = s_cascade_infer(lt, lm, lk, CFG if "CFG" in globals() else type("C",(),{})(), allowed_makes_by_type_idx if "allowed_makes_by_type_idx" in globals() else None, allowed_models_by_make_idx if "allowed_models_by_make_idx" in globals() else None)
+    cascade = _cascade_type_make_model(lt, lm, lk)
     t_id, m_id, k_id = cascade["type"], cascade["make"], cascade["model"]
     confs = cascade["confs"] + ((0.0,)*(3-len(cascade["confs"])))
     type_name  = (TYPES[t_id]  if t_id is not None and 0<=t_id<len(TYPES)  else None)
@@ -1071,12 +1057,12 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
         # veh box: prefer explicit veh head, else derive from parts+bbox
         veh_box_pred = out.get("veh_box_preds")
         if veh_box_pred is not None:
-            v = s_veh_box_from_any(veh_box_pred, int(IMG_SIZE))
+            v = _veh_box_from_any(veh_box_pred, int(IMG_SIZE))
             if v is not None: veh_box_sq = tuple(float(v[0,i].item()) for i in range(4))
         # NEW: per-part box resolve for overlay (best grid cell; decode if BP4 available; else heat fall-back)
-        BP4 = s_unpack_BP4HW(bbox_preds, P, H, W) if torch.is_tensor(bbox_preds) else None
+        BP4 = _unpack_bbox_to_BP4HW(bbox_preds, P, H, W) if torch.is_tensor(bbox_preds) else None
         if BP4 is not None:
-            XYXY = s_decode_dxdy(BP4, H, W, int(IMG_SIZE))  # [B,P,4,H,W]
+            XYXY = _decode_dxdy_logwh_cell(BP4, H, W, int(IMG_SIZE))  # [B,P,4,H,W]
         else:
             XYXY = None
         for p_idx in range(min(Pp, P)):
@@ -1112,17 +1098,17 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
                                    "conf": float(scores[p_idx].item()),
                                    "box_sq": [x1,y1,x2,y2]})
         if veh_box_sq is None and torch.is_tensor(bbox_preds):
-            BP4 = s_unpack_BP4HW(bbox_preds, P, H, W)
+            BP4 = _unpack_bbox_to_BP4HW(bbox_preds, P, H, W)
             veh_box_sq = _derive_vehicle_box_from_parts(part_logits[0], BP4, int(IMG_SIZE))
     else:
         # still try veh head
         veh_box_pred = out.get("veh_box_preds")
         if veh_box_pred is not None:
-            v = s_veh_box_from_any(veh_box_pred, int(IMG_SIZE))
+            v = _veh_box_from_any(veh_box_pred, int(IMG_SIZE))
             if v is not None: veh_box_sq = tuple(float(v[0,i].item()) for i in range(4))
 
     # back to original coords
-    veh_box = s_invert_letterbox_box(veh_box_sq, ow, oh, pad, scale) if veh_box_sq is not None else None
+    veh_box = _inv_letterbox_xyxy(veh_box_sq, ow, oh, pad, scale) if veh_box_sq is not None else None
 
     timer.tick("decode")
 

@@ -1,2 +1,2 @@
-
-from .engine import *  # re-export new engine
+# lightweight package init; do not import engine here
+__all__ = []
