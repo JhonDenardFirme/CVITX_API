@@ -720,6 +720,51 @@ TEMP_MAKE  = _env_float("TEMP_MAKE", 1.00)
 TEMP_MODEL = _env_float("TEMP_MODEL", 1.00)
 
 PART_TAU   = _env_float("PART_TAU", 0.30)
+  # Phase 9: Part box area gates + allow-list toggles
+AREA_MIN_FRAC = _env_float("PART_BOX_AREA_MIN_FRAC", 0.0009)
+AREA_MAX_FRAC = _env_float("PART_BOX_AREA_MAX_FRAC", 0.60)
+ALLOWLIST_EN  = _env_bool("PART_ALLOWLIST_EN", 0)
+
+def _filter_parts_debug_list(parts_debug_sq, img_size=IMG_SIZE,
+                             area_min_frac=AREA_MIN_FRAC,
+                             area_max_frac=AREA_MAX_FRAC,
+                             allowlist_en=ALLOWLIST_EN,
+                             type_name=None):
+    """
+    Filters debug part boxes using area gates; optional allow-list hook (currently no-ops unless you extend).
+    Returns a filtered list; logs a summary.
+    """
+    try:
+        sqA = float(img_size) * float(img_size)
+        minA = float(area_min_frac) * sqA
+        maxA = float(area_max_frac) * sqA
+
+        def ok_area(b):
+            if not isinstance(b, (list, tuple)) or len(b) != 4:
+                return False
+            x1, y1, x2, y2 = [float(v) for v in b]
+            w = max(0.0, x2 - x1); h = max(0.0, y2 - y1)
+            a = w * h
+            return (minA <= a <= maxA)
+
+        out = []
+        for p in (parts_debug_sq or []):
+            b = p.get("box_sq") or []
+            if not ok_area(b):
+                continue
+            # Allow-list hook: extend later (type_name available if you pass it)
+            # if allowlist_en:
+            #     nm = str(p.get("name") or "").lower()
+            #     # your rules here...
+            out.append(p)
+        LOG.info("parts_debug_hardening", kept=len(out),
+                 area_min=area_min_frac, area_max=area_max_frac,
+                 allowlist=bool(allowlist_en))
+        return out
+    except Exception as _e:
+        LOG.warn("parts_debug_hardening_failed", error=str(_e))
+        return parts_debug_sq or []
+
 
 ENABLE_COLOR = _env_bool("ENABLE_COLOR", 0)
 ENABLE_PLATE = _env_bool("ENABLE_PLATE", 0)
@@ -1026,6 +1071,10 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
         "_debug_pad_scale": {"pad": [px,py], "scale": float}                    # ADDED (non-breaking)
       }
     """
+    # ---- Phase 6 toggles (env-driven, non-breaking) ----
+    TOPK     = _env_int("PARTS_DEBUG_TOPK", 12)
+    DRAW_ALL = _env_bool("PARTS_DRAW_ALL", 0)
+
     aid = analysis_id or f"an_{int(time.time()*1000)}_{random.randint(100,999)}"
     timer = StageTimer(aid, variant)
 
@@ -1214,7 +1263,8 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
         "veh_box": veh_box,
         "plate_box": None,
         # NEW non-breaking debug fields for overlay utilities:
-        "_debug_parts_sq": parts_debug_sq,
+
+        "_debug_parts_sq": _filter_parts_debug_list(parts_debug_sq),
         "_debug_pad_scale": {"pad":[float(pad[0]),float(pad[1])], "scale": float(scale)},
     }
     timer.tick("postproc")
@@ -1329,6 +1379,17 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
                  veh_src=veh_src)
     except Exception as _e:
         LOG.warn("decode_summary_failed", error=str(_e))
+    
+    # ---- Phase 6 toggles apply ----
+    try:
+        _dbg = (dets.get("_debug_parts_sq") or []) if isinstance(dets, dict) else []
+        if isinstance(_dbg, list):
+            if not DRAW_ALL:
+                _dbg = _dbg[:int(TOPK)]
+            dets["_debug_parts_sq"] = _dbg
+        LOG.info("parts_debug_toggles", topk=int(TOPK), draw_all=bool(DRAW_ALL), kept=len(dets.get("_debug_parts_sq") or []))
+    except Exception as _e:
+        LOG.warn("parts_debug_toggles_failed", error=str(_e))
     return dets, timings, metrics
 
 # ======================== END OF EC2 CODE ENGINE ========================

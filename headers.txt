@@ -1,0 +1,12 @@
+HTTP/1.1 307 Temporary Redirect
+date: Fri, 31 Oct 2025 22:29:30 GMT
+server: uvicorn
+content-length: 0
+location: /workspaces/8cdc46f9-12eb-4e07-ac44-f84dd1fdfb96/image-analyses/4c3d7a9c-2e23-467c-b4bd-fd4f9c4f9a50
+
+HTTP/1.1 401 Unauthorized
+date: Fri, 31 Oct 2025 22:29:30 GMT
+server: uvicorn
+content-length: 26
+content-type: application/json
+
