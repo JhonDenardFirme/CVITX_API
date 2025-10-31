@@ -134,24 +134,69 @@ def _s3_put_image(bucket: str, key: str, img: Image.Image):
 
 # --- drawing / crops -----------------------------------------------------------
 def _draw_anno(img: Image.Image, dets: Dict[str, Any]) -> Image.Image:
+    """
+    Draw vehicle + plate + per-part boxes.
+    - veh_box, plate_box are expected in ORIGINAL image coords (already back-mapped by engine).
+    - _debug_parts_sq has boxes in 640×640 square coords; use _debug_pad_scale (pad, scale) to map back.
+    """
     im = img.copy().convert("RGB")
     dr = ImageDraw.Draw(im)
-    # basic label
+
+    # Title label
     label = []
-    if dets.get("type") is not None:  label.append(str(dets["type"]))
-    if dets.get("make") is not None:  label.append(str(dets["make"]))
+    if dets.get("type")  is not None: label.append(str(dets["type"]))
+    if dets.get("make")  is not None: label.append(str(dets["make"]))
     if dets.get("model") is not None: label.append(str(dets["model"]))
-    label = " / ".join(label) or "vehicle"
-    # boxes
-    def _rect(b, color):
-        if not b: return
-        x1,y1,x2,y2 = map(int, b)
-        dr.rectangle([x1,y1,x2,y2], outline=color, width=3)
-    _rect(dets.get("veh_box"),   "red")
-    _rect(dets.get("plate_box"), "yellow")
-    # title
-    dr.text((10,10), label, fill="white", stroke_width=2, stroke_fill="black")
+    title = " / ".join(label) or "vehicle"
+
+    # Helper: rectangle with clamping
+    def _rect_xyxy(b, color="red", width=3):
+        if not b: return None
+        x1,y1,x2,y2 = map(int, map(round, b))
+        x1 = max(0, min(x1, im.width  - 1))
+        y1 = max(0, min(y1, im.height - 1))
+        x2 = max(x1+1, min(x2, im.width))
+        y2 = max(y1+1, min(y2, im.height))
+        dr.rectangle([x1,y1,x2,y2], outline=color, width=width)
+        return (x1,y1,x2,y2)
+
+    # Vehicle & Plate (already original coords)
+    _rect_xyxy(dets.get("veh_box"),   "red",    3)
+    _rect_xyxy(dets.get("plate_box"), "yellow", 3)
+
+    # Parts: map from square coords → original coords using pad/scale
+    parts   = dets.get("_debug_parts_sq") or []
+    padinfo = dets.get("_debug_pad_scale") or {}
+    pad     = padinfo.get("pad") or [0.0, 0.0]
+    scale   = float(padinfo.get("scale") or 1.0)
+    px, py  = float(pad[0]), float(pad[1])
+    s       = scale if scale not in (0.0, None) else 1.0
+
+    def _sq_to_orig(x, y):
+        # inverse letterbox: orig = (square - pad) / scale
+        xo = (float(x) - px) / max(1e-12, s)
+        yo = (float(y) - py) / max(1e-12, s)
+        # clamp into image bounds
+        X = max(0, min(int(round(xo)), im.width  - 1))
+        Y = max(0, min(int(round(yo)), im.height - 1))
+        return X, Y
+
+    for p in parts:
+        box = p.get("box_sq") or []
+        if len(box) == 4:
+            x1o, y1o = _sq_to_orig(box[0], box[1])
+            x2o, y2o = _sq_to_orig(box[2], box[3])
+            if x2o <= x1o: x2o = min(im.width  - 1, x1o + 2)
+            if y2o <= y1o: y2o = min(im.height - 1, y1o + 2)
+            _rect_xyxy((x1o, y1o, x2o, y2o), "cyan", 2)
+            nm = str(p.get("name", "part"))
+            cf = float(p.get("conf", 0.0))
+            dr.text((x1o, y1o + 2), f"{nm}:{cf:.2f}", fill="cyan")
+
+    # Title overlay
+    dr.text((10,10), title, fill="white", stroke_width=2, stroke_fill="black")
     return im
+
 
 def _crop(img: Image.Image, box: Any) -> Optional[Image.Image]:
     if not box: return None
