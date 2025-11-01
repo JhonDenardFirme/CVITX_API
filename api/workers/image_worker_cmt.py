@@ -1,4 +1,11 @@
 # Auto-generated CMT wrapper to avoid 'import *' issues.
+import uuid, re
+UUID_RE = re.compile(r'^[0-9a-fA-F-]{36}$')
+def _is_uuid(s:str)->bool:
+    try:
+        return bool(UUID_RE.match(s)) and str(uuid.UUID(s)) == s.lower()
+    except Exception:
+        return False
 import os
 from api.workers import image_worker_baseline as base
 

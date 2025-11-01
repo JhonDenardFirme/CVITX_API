@@ -1,11 +1,4 @@
 from api.analysis.contracts import parse_analyze_image_message
-import uuid, re
-UUID_RE = re.compile(r'^[0-9a-fA-F-]{36}$')
-def _is_uuid(s:str)->bool:
-    try:
-        return bool(UUID_RE.match(s)) and str(uuid.UUID(s)) == s.lower()
-    except Exception:
-        return False
 import os, io, json, time, traceback, base64, decimal
 from datetime import datetime, timezone
 from typing import Optional, Tuple, Dict, Any
@@ -87,18 +80,19 @@ INSERT INTO image_analysis_results AS r (
     type, type_conf, make, make_conf, model, model_conf,
     parts, colors, plate_text, plate_conf,
     annotated_image_s3_key, vehicle_image_s3_key, plate_image_s3_key,
-    latency_ms, gflops, memory_usage, updated_at,
-    colors_fbl, colors_overall_conf
-)
+    latency_ms, gflops, memory_usage, updated_at
+,
+  colors_fbl, colors_overall_conf)
 VALUES (
-    %(analysis_id)s, %(variant)s,
+    %(analysis_id,
+  %(colors_fbl_jsonb)s, %(colors_overall_conf)s)s, %(variant)s,
     %(type)s, %(type_conf)s, %(make)s, %(make_conf)s, %(model)s, %(model_conf)s,
     %(parts_jsonb)s, %(colors_jsonb)s, %(plate_text)s, %(plate_conf)s,
     %(annotated_key)s, %(vehicle_key)s, %(plate_key)s,
-    %(latency_ms)s, %(gflops)s, %(memory_usage)s, NOW(),
-    %(colors_fbl_jsonb)s, %(colors_overall_conf)s
+    %(latency_ms)s, %(gflops)s, %(memory_usage)s, NOW()
 )
-ON CONFLICT (analysis_id, model_variant) DO UPDATE SET
+ON CONFLICT (analysis_id, model_variant)
+DO UPDATE SET
     type=EXCLUDED.type, type_conf=EXCLUDED.type_conf,
     make=EXCLUDED.make, make_conf=EXCLUDED.make_conf,
     model=EXCLUDED.model, model_conf=EXCLUDED.model_conf,
@@ -107,11 +101,10 @@ ON CONFLICT (analysis_id, model_variant) DO UPDATE SET
     annotated_image_s3_key=EXCLUDED.annotated_image_s3_key,
     vehicle_image_s3_key=EXCLUDED.vehicle_image_s3_key,
     plate_image_s3_key=EXCLUDED.plate_image_s3_key,
-    latency_ms=EXCLUDED.latency_ms, gflops=EXCLUDED.gflops,
-    memory_usage=EXCLUDED.memory_usage,
+    latency_ms=EXCLUDED.latency_ms, gflops=EXCLUDED.gflops, memory_usage=EXCLUDED.memory_usage,
     updated_at=NOW(),
-    colors_fbl=EXCLUDED.colors_fbl,
-    colors_overall_conf=EXCLUDED.colors_overall_conf;
+  colors_fbl=EXCLUDED.colors_fbl,
+  colors_overall_conf=EXCLUDED.colors_overall_conf;
 """
 
 def _update_parent_status(conn, analysis_id: int):
@@ -301,20 +294,8 @@ def _process_one_message(body: str, receipt_handle: str):
     with _connect() as conn:
         conn.autocommit = True
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            # --- ensure FBL params exist for UPSERT ---
-            payload["colors_fbl_jsonb"] = json.dumps((
-            locals().get("colors_fbl")
-            or locals().get("results", {}).get("metadata", {}).get("colors_fbl")
-            or []
-            )[:3])
-            payload["colors_overall_conf"] = float((
-            locals().get("colors_overall_conf")
-            or locals().get("results", {}).get("metadata", {}).get("colors_overall_conf")
-            or 0.0
-            ))
             cur.execute(UPSERT_SQL, payload)
             _update_parent_status(conn, aid)
-
 
     dt_ms = int((time.time() - t0) * 1000)
     log("INFO","upsert", analysis_id=aid, latency_ms=metrics.get("latency_ms"), end_to_end_ms=dt_ms, memory_usage=metrics.get("memory_usage"), mem_gb=metrics.get("mem_gb"), gflops=metrics.get("gflops"),

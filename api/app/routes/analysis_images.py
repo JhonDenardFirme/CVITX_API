@@ -151,7 +151,7 @@ def show(workspace_id: str, analysis_id: str, me=Depends(require_user)):
           SELECT model_variant::text, type, type_conf, make, make_conf, model, model_conf,
        parts, colors, plate_text, plate_conf,
        annotated_image_s3_key, vehicle_image_s3_key, plate_image_s3_key,
-       latency_ms, gflops, memory_usage, status, error_msg
+       latency_ms, gflops, memory_usage, status, error_msg, colors_fbl, colors_overall_conf
   FROM image_analysis_results
  WHERE analysis_id=:id
         """), {"id": aid}).mappings().all()
@@ -174,7 +174,8 @@ def show(workspace_id: str, analysis_id: str, me=Depends(require_user)):
         ann_url = veh_url = plate_url = None
         if r["annotated_image_s3_key"]:
             ann_url = s3.generate_presigned_url("get_object",
-                Params={"Bucket": settings.s3_bucket, "Key": r["annotated_image_s3_key"]},
+                Params={"Bucket": settings.s3_bucket, "Key": r["annotated_image_s3_key"],
+},
                 ExpiresIn=TTL)
         if r.get("vehicle_image_s3_key"):
             veh_url = s3.generate_presigned_url("get_object",
@@ -199,7 +200,12 @@ def show(workspace_id: str, analysis_id: str, me=Depends(require_user)):
             "latency_ms": r["latency_ms"], "gflops": r["gflops"],
             "memory_gb": r["memory_usage"],
             "status": r["status"], "error_msg": r["error_msg"]
-        }
+        ,
+              "metadata": {
+                "colors_fbl": r.get("colors_fbl") or [],
+                "colors_overall_conf": r.get("colors_overall_conf")
+              }
+          }
     return out
 
 # List image analyses (plural) — simple paginated list
