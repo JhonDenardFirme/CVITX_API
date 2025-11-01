@@ -108,37 +108,172 @@ def _log_json(level: str, event: str, **kw):
 def _b64_jpeg(img: Image.Image) -> str:
     buf = io.BytesIO(); img.save(buf, format="JPEG", quality=90); return base64.b64encode(buf.getvalue()).decode("ascii")
 
-def detect_vehicle_color(image_pil: Image.Image, veh_box: Optional[Tuple[float,float,float,float]] = None) -> List[Dict[str, Any]]:
-    global __COLOR_WARNED
-    api_key = os.getenv("COLOR_UTILS_API_KEY") or os.getenv("OPENAI_API_KEY")
+def detect_vehicle_color(image_pil: Image.Image, veh_box: Optional[Tuple[float,float,float,float]] = None) -> List[Dict[str, Any]]:  # tolerant adapter
+    """
+    Accepts two modes:
+      (1) Microservice: COLOR_UTILS_ENDPOINT + COLOR_UTILS_API_KEY (X-API-Key header)
+      (2) Colab-style:  COLOR_PROVIDER + COLOR_MODEL_ID + OPENAI_API_KEY (+ prompt) → same endpoint but different JSON shape
+    Returns list of {"finish","base","lightness","conf"} (<=3 items), sorted by coverage if available.
+    """
+    def _b64(img: Image.Image) -> str:
+        buf = io.BytesIO(); img.convert("RGB").save(buf, format="JPEG", quality=90)
+        import base64 as _b; return _b.b64encode(buf.getvalue()).decode("ascii")
+
+    # --- label parser: "Metallic Gray Dark" → (finish, base, lightness)
+    _FIN = {"metallic","matte","glossy"}
+    _LUX = {"light","dark"}
+    _BASE = {"red","orange","yellow","green","blue","purple","pink","white","gray","black","silver","gold","brown","beige","maroon","cyan"}
+
+    def _parse_label(lbl: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+        toks = [t.strip() for t in (lbl or "").replace(","," ").split() if t.strip()]
+        fin = base = lux = None
+        for t in toks:
+            tl = t.lower()
+            if tl in _FIN and fin is None: fin = t.title()
+            elif tl in _BASE and base is None: base = t.title()
+            elif tl in _LUX and lux is None: lux = t.title()
+        # fallback: if no base identified, try best guess from remaining tokens
+        if base is None:
+            for t in toks:
+                tl = t.lower()
+                if tl not in _FIN and tl not in _LUX:
+                    base = t.title(); break
+        return fin, base, lux
+
+    # --- compose crop
+    crop = image_pil if veh_box is None else image_pil.crop(tuple(map(int, veh_box)))
+
+    # --- envs
     endpoint = os.getenv("COLOR_UTILS_ENDPOINT")
-    if not api_key or not endpoint:
-        if not __COLOR_WARNED:
-            __COLOR_WARNED = True
-            _log_json("WARN", "color_adapter_skipped", note="missing COLOR_UTILS_API_KEY or COLOR_UTILS_ENDPOINT")
+    x_api_key = os.getenv("COLOR_UTILS_API_KEY")
+    provider  = os.getenv("COLOR_PROVIDER") or ""
+    model_id  = os.getenv("COLOR_MODEL_ID") or ""
+    openai_key = os.getenv("OPENAI_API_KEY")
+
+    if not endpoint:
+        _log_json("WARN","color_adapter_skipped", note="missing COLOR_UTILS_ENDPOINT")
         return []
+
+    # --- Colab prompt (identical to notebook)
+    _COLOR_INSTRUCTIONS = """
+You are 'Color Detector AI' for VEHICLE BODY PAINT.
+
+SCOPE (IMPORTANT):
+- Analyze the BODY PAINT ONLY: painted panels, roof, hood, trunk, doors, pillars, factory accents if painted.
+- EXCLUDE: glass/windows, lights, license plates, chrome/metal grille, wheels/tires, mirrors' reflective glass, sky/road/reflections/shadows/stickers/dirt.
+
+TASK:
+1) Decide the number of PROMINENT body-paint colors N ∈ {1,2,3}.
+   - Start with 1 (most common case).
+   - Include a 2nd color ONLY if you are ≥0.70 certain it’s actually part of the body paint (not reflections or non-paint parts).
+   - Include a 3rd color ONLY if you are ≥0.70 certain.
+   - Do NOT exceed 3.
+
+2) For each chosen color, produce a descriptor with up to 3 parts: [Finish] [Base] [Lightness]
+   - Finish ∈ {Metallic, Matte, Glossy} (omit if unclear)
+   - Base   ∈ {Red, Orange, Yellow, Green, Blue, Purple, Pink, White, Gray, Black, Silver, Gold, Brown, Beige, Maroon, Cyan} (REQUIRED)
+   - Lightness ∈ {Light, Dark} (omit if unclear)
+
+3) Provide fractional coverage per color (fractions sum to 1.0). Sort colors by coverage (largest first).
+
+CONFIDENCE:
+- Provide an overall confidence 0..1 for your BODY-PAINT color decision (not segmentation).
+- Also provide per-color confidences (0..1).
+- Be conservative under glare/reflections/shadows or ambiguous two-tone paint.
+
+OUTPUT RULES:
+- Return JSON ONLY using the schema: {"labels":[...], "fractions":[...], "color_confidences":[...], "pixels":int, "confidence":float, "stainless":bool, "body_paint_only":bool}
+"""
+
+    # --- build request
+    headers = {"Content-Type":"application/json"}
+    payload: Dict[str, Any]
+
+    # If Colab vars present, send Colab-shaped payload (provider/model/prompt)
+    if provider and model_id and openai_key:
+        payload = {
+            "mode": "dominant_colors",
+            "provider": provider,
+            "model": model_id,
+            "prompt": _COLOR_INSTRUCTIONS,
+            "image_b64": _b64(crop),
+            "max_colors": 3,
+            "response_shape": "colors_v1"
+        }
+        headers["Authorization"] = f"Bearer {openai_key}"
+        if x_api_key: headers["X-API-Key"] = x_api_key
+    else:
+        # Microservice minimal payload
+        payload = {"image_b64": _b64(crop), "max_colors": 3}
+        if x_api_key: headers["X-API-Key"] = x_api_key
+
+    # --- call endpoint
     try:
         import requests
-        crop = image_pil if veh_box is None else image_pil.crop(tuple(map(int, veh_box)))
-        payload = {"image_b64": _b64_jpeg(crop), "max_colors": 3}
-        headers = {"X-API-Key": api_key, "Authorization": "Bearer ***"}
-        r = requests.post(endpoint, json=payload, headers=headers, timeout=6)
-        if r.status_code != 200:
-            _log_json("WARN","color_http_error", code=r.status_code); return []
+        r = requests.post(endpoint, json=payload, headers=headers, timeout=8)
+        if not r.ok:
+            _log_json("WARN","color_http_error", code=r.status_code)
+            return []
         js = r.json() or {}
-        out = []
-        for i in (js.get("colors") or [])[:3]:
-            name = i.get("name") or i.get("base") or i.get("label")
-            if not name: continue
-            out.append({
-                "name": str(name),
-                "fraction": float(i.get("fraction", 0.0)),
-                "conf": float(i.get("conf", i.get("confidence", 0.0)))
-            })
-        return out
-    except Exception:
-        _log_json("WARN","color_adapter_error")
+    except Exception as e:
+        _log_json("WARN","color_adapter_error", err=str(e))
         return []
+
+    # --- normalize response → [{finish,base,lightness,conf}]
+    items: List[Tuple[Optional[str],Optional[str],Optional[str],float,float]] = []  # (fin, base, lux, conf, frac)
+
+    def _push(fin, base, lux, conf, frac):
+        try:
+            c = float(conf) if conf is not None else 0.0
+        except Exception:
+            c = 0.0
+        try:
+            f = float(frac) if frac is not None else 0.0
+        except Exception:
+            f = 0.0
+        items.append((fin, base, lux, c, f))
+
+    # Case A: microservice/colab already returning "colors":[...]
+    cols = js.get("colors")
+    if isinstance(cols, list) and cols:
+        for i in cols:
+            if isinstance(i, dict):
+                # Already structured?
+                fin = i.get("finish")
+                base = i.get("base") or i.get("name") or i.get("label")
+                lux  = i.get("lightness")
+                if not fin or not base or not lux:
+                    fin2, base2, lux2 = _parse_label(str(base or ""))
+                    fin = fin or fin2; base = base2 or base; lux = lux or lux2
+                conf = i.get("conf", i.get("confidence"))
+                frac = i.get("fraction", i.get("coverage"))
+                _push(fin, base.title() if base else None, lux, conf, frac)
+
+    # Case B: Colab strict schema {"labels":[],"fractions":[],"color_confidences":[]...}
+    elif isinstance(js.get("labels"), list):
+        labels = js.get("labels") or []
+        fracs  = js.get("fractions") or [1.0] * len(labels)
+        confs  = js.get("color_confidences") or [js.get("confidence", 0.0)] * len(labels)
+        for idx, lbl in enumerate(labels[:3]):
+            fin, base, lux = _parse_label(str(lbl))
+            conf = confs[idx] if idx < len(confs) else js.get("confidence")
+            frac = fracs[idx] if idx < len(fracs) else 0.0
+            _push(fin, base, lux, conf, frac)
+
+    # Sort by fraction desc, then confidence desc
+    items.sort(key=lambda t: (t[4], t[3]), reverse=True)
+
+    out: List[Dict[str,Any]] = []
+    for fin, base, lux, c, _f in items[:3]:
+        rec = {
+            "finish": fin if fin else None,
+            "base":   base if base else None,
+            "lightness": lux if lux else None,
+            "conf":   float(c)
+        }
+        out.append(rec)
+    return out
+
 def read_plate_text(image_pil: Image.Image, plate_box: Optional[Tuple[float,float,float,float]] = None) -> Dict[str, Any]:
     """
     Tries custom microservice first (PLATE_UTILS_ENDPOINT + X-API-Key), then falls back to Plate Recognizer
