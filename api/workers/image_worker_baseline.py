@@ -87,7 +87,7 @@ VALUES (
     %(type)s, %(type_conf)s, %(make)s, %(make_conf)s, %(model)s, %(model_conf)s,
     %(parts_jsonb)s, %(colors_jsonb)s, %(plate_text)s, %(plate_conf)s,
     %(annotated_key)s, %(vehicle_key)s, %(plate_key)s,
-    %(latency_ms)s, %(gflops)s, %(mem_gb)s, NOW()
+    %(latency_ms)s, %(gflops)s, %(memory_usage)s, NOW()
 )
 ON CONFLICT (analysis_id, model_variant)
 DO UPDATE SET
@@ -284,7 +284,8 @@ def _process_one_message(body: str, receipt_handle: str):
         "latency_ms": float(metrics.get("latency_ms") or timings.get("total") or 0.0),
         "gflops": metrics.get("gflops"),
         "mem_gb": metrics.get("mem_gb"),
-    }
+              "memory_usage": metrics.get("memory_usage"),
+}
 
     with _connect() as conn:
         conn.autocommit = True
@@ -293,7 +294,7 @@ def _process_one_message(body: str, receipt_handle: str):
             _update_parent_status(conn, aid)
 
     dt_ms = int((time.time() - t0) * 1000)
-    log("INFO", "upsert", analysis_id=aid, latency_ms=metrics.get("latency_ms"), end_to_end_ms=dt_ms,
+    log("INFO","upsert", analysis_id=aid, latency_ms=metrics.get("latency_ms"), end_to_end_ms=dt_ms, memory_usage=metrics.get("memory_usage"), mem_gb=metrics.get("mem_gb"), gflops=metrics.get("gflops"),
         s3={k:v for k,v in keys.items() if v}, summary={
             "type": dets.get("type"), "make": dets.get("make"), "model": dets.get("model")
         })

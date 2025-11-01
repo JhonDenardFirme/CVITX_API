@@ -197,6 +197,7 @@ def show(workspace_id: str, analysis_id: str, me=Depends(require_user)):
                 "plate_image_s3_key": r.get("plate_image_s3_key"), "plate_url": plate_url
             },
             "latency_ms": r["latency_ms"], "gflops": r["gflops"],
+            "memory_gb": r["memory_usage"],
             "status": r["status"], "error_msg": r["error_msg"]
         }
     return out

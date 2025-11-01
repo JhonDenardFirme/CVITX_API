@@ -41,6 +41,42 @@ class JsonLogger:
 
 LOG = JsonLogger("cvitx-engine")
 
+# --- Runtime metrics helpers (GFLOPs + NVML) ---
+_GFLOPS_CACHE: dict[tuple, float] = {}
+_NVML_TOTAL_GB: float | None = None
+
+def _nvml_totals_gb() -> float | None:
+    global _NVML_TOTAL_GB
+    if _NVML_TOTAL_GB is not None:
+        return _NVML_TOTAL_GB
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        h = pynvml.nvmlDeviceGetHandleByIndex(0)
+        info = pynvml.nvmlDeviceGetMemoryInfo(h)
+        _NVML_TOTAL_GB = float(info.total) / 1e9
+    except Exception:
+        _NVML_TOTAL_GB = None
+    return _NVML_TOTAL_GB
+
+def _estimate_gflops(model: nn.Module, img_size: int) -> float | None:
+    key = (id(model), int(img_size))
+    if key in _GFLOPS_CACHE:
+        return _GFLOPS_CACHE[key]
+    try:
+        from thop import profile
+        device = next(model.parameters()).device
+        x = torch.zeros(1, 3, int(img_size), int(img_size), device=device)
+        with torch.no_grad():
+            macs, _ = profile(model, inputs=(x,), verbose=False)
+        gf = float(macs) / 1e9
+        _GFLOPS_CACHE[key] = gf
+        return gf
+    except Exception:
+        _GFLOPS_CACHE[key] = None
+        return None
+
+
 # ==============================================================================
 # PHASE 2 — SSOT + label_maps adoption (+ allow-lists, regions/parts)
 # ==============================================================================
@@ -771,7 +807,7 @@ ENABLE_PLATE = _env_bool("ENABLE_PLATE", 0)
 
 # ---------- StageTimer ----------
 class StageTimer:
-    ORDER = ["setup","vocab","bundle","preproc","forward","decode","postproc","color","plate","s3","db"]
+    ORDER = ["setup","vocab","bundle","preproc","warmup","forward","decode","postproc","color","plate","s3","db"]
     def __init__(self, analysis_id:str, variant:str, logger:JsonLogger=LOG):
         self.analysis_id = analysis_id
         self.variant     = variant
@@ -1102,6 +1138,7 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
 
     # forward (with one-time warm-up)
     _maybe_warmup(model, dev, int(IMG_SIZE))
+    timer.tick("warmup")
     use_amp = bool(AMP and dev.startswith("cuda") and torch.cuda.is_available())
     ctx = torch.amp.autocast(device_type="cuda") if use_amp else nullcontext()
     with torch.no_grad():
@@ -1247,7 +1284,18 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
             if v is not None: veh_box_sq = tuple(float(v[0,i].item()) for i in range(4))
 
     # back to original coords
+    # pick best Plate part (Front/Rear) → plate_box_sq
+    plate_box_sq = None
+    if isinstance(parts_debug_sq, list) and parts_debug_sq:
+        cand = [p for p in parts_debug_sq if str(p.get("name","")).lower().endswith("plate")]
+        if cand:
+            best = max(cand, key=lambda r: float(r.get("conf",0.0)))
+            bb = best.get("box_sq")
+            if isinstance(bb, (list,tuple)) and len(bb)==4:
+                plate_box_sq = tuple(float(v) for v in bb)
+
     veh_box = s_invert_letterbox_box(veh_box_sq, ow, oh, pad, scale) if veh_box_sq is not None else None
+    plate_box = s_invert_letterbox_box(plate_box_sq, ow, oh, pad, scale) if plate_box_sq is not None else None
 
     timer.tick("decode")
 
@@ -1261,6 +1309,7 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
         "plate_text": "",
         "plate_conf": 0.0,
         "veh_box": veh_box,
+                "plate_box": plate_box,
         "plate_box": None,
         # NEW non-breaking debug fields for overlay utilities:
 
@@ -1355,6 +1404,19 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
     timer.tick("db")
 
     timings = timer.done()
+    # ---- metrics (exclude warmup from latency) ----
+    used_gb = None
+    if dev.startswith("cuda") and torch.cuda.is_available():
+        try:
+            used_gb = float(torch.cuda.memory_allocated()) / 1e9
+        except Exception:
+            used_gb = None
+    total_gb = _nvml_totals_gb()
+    mem_ratio = (used_gb / total_gb) if (used_gb is not None and total_gb) else None
+    gflops = _estimate_gflops(model, int(IMG_SIZE))
+    lat_ms = float(timings.get("total", 0)) - float(timings.get("warmup", 0) or 0)
+    if lat_ms < 0:
+        lat_ms = 0.0
 
     # metrics (align E2E with StageTimer total)
     mem_gb = None
@@ -1362,9 +1424,10 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
         try: mem_gb = torch.cuda.memory_allocated()/1e9
         except Exception: mem_gb = None
     metrics = {
-        "latency_ms": float(timings["total"]),
-        "gflops": None,  # can be filled later if we wire thop here
+        "latency_ms": lat_ms,
+        "gflops": gflops,  # can be filled later if we wire thop here
         "mem_gb": float(mem_gb) if mem_gb is not None else None,
+    "memory_usage": mem_ratio,
         "device": dev,
         "trained": bool(rep.get("trained", False)),
       }
