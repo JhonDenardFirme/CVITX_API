@@ -353,3 +353,80 @@ def read_plate_text(image_pil: Image.Image, plate_box: Optional[Tuple[float,floa
             pass
 
     return {}
+
+# === FBL aggregator (single overall confidence) ===
+def fbl_overall_conf(colors: List[Dict[str, Any]]) -> float:
+    """
+    Single overall confidence for BODY-PAINT color decision (0..1).
+    Conservative: use the max per-color conf. 0.0 if no colors.
+    """
+    try:
+        return float(max((c.get("conf") or 0.0) for c in (colors or [])))
+    except Exception:
+        return 0.0
+
+# === FBL parsing + writeback (aligned with Color GPT util) ===
+_FBL_FINISH = {"Metallic","Matte","Glossy"}
+_FBL_LIGHT  = {"Light","Dark"}
+
+def _parse_fbl_label(label: str):
+    """Split label like 'Metallic Gray Dark' or 'White' → (finish, base, lightness)."""
+    if not label or not isinstance(label, str):
+        return (None, "Unknown", None)
+    parts = label.strip().split()
+    finish = None
+    light  = None
+    base   = None
+    for t in parts:
+        if t in _FBL_FINISH:
+            finish = t
+        elif t in _FBL_LIGHT:
+            light = t
+    # base = remaining tokens (first that is not finish/light). Fall back to last token.
+    leftovers = [t for t in parts if t not in _FBL_FINISH and t not in _FBL_LIGHT]
+    if leftovers:
+        base = " ".join(leftovers)
+    else:
+        base = parts[-1]
+    return (finish, base, light)
+
+def _payload_to_fbl(payload):
+    """
+    payload keys (from detect_vehicle_color): labels[], color_confidences[], confidence, ...
+    Returns: (fbl_list, overall_conf)
+      fbl_list: [{finish, base, lightness, conf}, ...]
+      overall_conf: float
+    """
+    labels = list(payload.get("labels") or [])
+    pcs    = list(payload.get("color_confidences") or [])
+    overall = float(payload.get("confidence") or 0.0)
+    # align lengths
+    if len(pcs) < len(labels):
+        pcs += [0.0]*(len(labels)-len(pcs))
+    fbl = []
+    for i, lab in enumerate(labels):
+        finish, base, light = _parse_fbl_label(str(lab))
+        conf = float(pcs[i]) if i < len(pcs) else 0.0
+        fbl.append({"finish": finish, "base": base, "lightness": light, "conf": conf})
+    return fbl, overall
+
+def attach_fbl(results: dict, image_pil, veh_box=None):
+    """
+    Writes:
+      results['metadata']['colors_fbl'] = [{finish, base, lightness, conf}]
+      results['metadata']['colors_overall_conf'] = float
+    Uses detect_vehicle_color(...) (GPT util) then converts → FBL.
+    """
+    try:
+        from api.analysis.utils import detect_vehicle_color  # the GPT-backed function
+    except Exception:
+        return
+    try:
+        payload = detect_vehicle_color(image_pil, veh_bbox_orig=veh_box)
+        fbl, overall = _payload_to_fbl(payload)
+        md = results.setdefault("metadata", {})
+        md["colors_fbl"] = fbl
+        md["colors_overall_conf"] = float(overall if overall else (fbl_overall_conf(fbl) if fbl else 0.0))
+    except Exception:
+        # stay silent; don't kill the worker for color issues
+        pass

@@ -11,3 +11,16 @@ base.SQS_URL = base.QUEUE_URL
 
 if __name__ == "__main__":
     base.main()
+
+# --- Color (FBL) injection (Finish / Base / Lightness + single conf) ---
+try:
+    from api.analysis.utils import detect_vehicle_color, fbl_overall_conf
+    _veh_box = (detection.get("veh_box") if "detection" in locals() else None)
+    _colors_fbl = detect_vehicle_color(image_pil, veh_box=_veh_box)
+    _overall = fbl_overall_conf(_colors_fbl)
+    results.setdefault("metadata", {})
+    results["metadata"]["colors_fbl"] = _colors_fbl               # [{finish,base,lightness,conf}]
+    results["metadata"]["colors_overall_conf"] = _overall         # single 0..1
+except Exception:
+    pass
+
