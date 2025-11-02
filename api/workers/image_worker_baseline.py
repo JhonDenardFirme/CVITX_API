@@ -312,7 +312,15 @@ def _process_one_message(body: str, receipt_handle: str):
             or locals().get("results", {}).get("metadata", {}).get("colors_overall_conf")
             or 0.0
             ))
+            if isinstance(payload.get("analysis_id"), str): aid = payload.get("analysis_id");
+        
+        if isinstance(aid, str):
+        
             cur.execute(UPSERT_SQL, payload)
+        
+        else:
+        
+            logger.info("skip_upsert_selftest", extra={"analysis_id": aid})
             _update_parent_status(conn, aid)
 
 
