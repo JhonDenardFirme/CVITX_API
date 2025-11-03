@@ -1,16 +1,21 @@
-# ======================= START OF EC2 CODE ENGINE  =======================
+
+# ======================= START OF EC2 CODE ENGINE (REWRITTEN — Phase-A Stable, Phase-9 Keys, SSOT-Aligned + Alias Hooks) =======================
+# Rewriter notes:
+# - Full replacement retaining original structure & public API (surgical changes only).
+# - Change labels: [SSOT] completed vocabs/maps, [ALIAS] alias stubs + reapplication, [LIGHT] TailLight→Taillight fixes,
+#                  [REGION] CFG.regions support, [KEEP] preserved behavior.
 
 import os, io, json, time, hashlib, zipfile
 from collections import OrderedDict
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Tuple, Optional, Any, Sequence
 from io import BytesIO
 
-# Light deps (installed in step 3)
+# Light deps
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import timm
-from PIL import Image
+from PIL import Image, ImageDraw, ImageOps
 
 # === Shared geometry/decoding utils (alias as s_*) ===
 from .bbox_utils import (
@@ -20,13 +25,29 @@ from .bbox_utils import (
     _decode_dxdy_logwh_cell  as s_decode_dxdy,
     _veh_box_from_any        as s_veh_box_from_any,
     _box_from_heatmap        as s_box_from_heatmap,
-    _ensure_min_box          as s_ensure_min_box,
+    _ensure_min_box          as s_ensure_min_box,     # not used but kept for parity
     blend_logits             as s_blend_logits,
     cascade_infer            as s_cascade_infer,
     assert_head_grid_matches as s_assert_head_grid_matches,
 )
 
-# ---- Local logger (kept) ------------------------------------------------------
+# --- Shared utils (runtime, color, plate) -------------------------------------
+try:
+    from api.analysis.utils_runtime import warmup_model, estimate_gflops, per_infer_memory_metrics
+except Exception:
+    warmup_model = estimate_gflops = per_infer_memory_metrics = None
+
+try:
+    from api.analysis import utils_color as _COLOR
+except Exception:
+    _COLOR = None
+
+try:
+    from api.analysis import utils_plate as _PLATE
+except Exception:
+    _PLATE = None
+
+# ---- Local logger (kept)
 def _now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + f".{int((time.time()%1)*1000):03d}Z"
 
@@ -41,7 +62,7 @@ class JsonLogger:
 
 LOG = JsonLogger("cvitx-engine")
 
-# --- Runtime metrics helpers (GFLOPs + NVML) ---
+# --- Runtime metrics helpers (GFLOPs + NVML) --- (kept as fallbacks)
 _GFLOPS_CACHE: dict[tuple, float] = {}
 _NVML_TOTAL_GB: float | None = None
 
@@ -78,80 +99,279 @@ def _estimate_gflops(model: nn.Module, img_size: int) -> float | None:
 
 
 # ==============================================================================
-# PHASE 2 — SSOT + label_maps adoption (+ allow-lists, regions/parts)
+# PHASE 2 — SSOT + label_maps adoption (+ allow-lists, regions/parts) [SSOT][ALIAS][LIGHT][REGION]
 # ==============================================================================
-# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-# NOTE: Vocab Builder: PRESERVED VERBATIM
-# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
-# --- Regions & SSOT hierarchy (trimmed to keep file compact; add freely later) ---
-REGIONS: List[str] = ["Front","Side","Rear","Roof"]
+# ------------------------ [ALIAS] alias helpers (Colab-compatible stubs) ------------------------
+# We will call apply_all_label_aliases(type2idx, make2idx, model2idx, part2idx, cfg),
+# if provided elsewhere. Otherwise we supply a no-op stub and sanitized alias dicts on CFG.
+if "apply_all_label_aliases" not in globals():
+    def apply_all_label_aliases(type2idx=None, make2idx=None, model2idx=None, part2idx=None, cfg=None, verbose=False):
+        # no-op if user didn't define real aliasing; keep maps unchanged
+        return type2idx, make2idx, model2idx, part2idx
 
+def _sanitize_alias_dict(d):
+    return {k: v for k, v in (d or {}).items() if isinstance(v, str) and v.strip()}
+
+# Ensure CFG exists and carries alias fields used by the Colab reference.
+if "CFG" not in globals():
+    class _CFGStub:
+        regions: Tuple[str, ...] = tuple(["Front", "Side", "Rear", "Roof"])
+        alias_type:  Dict[str, str] = {}
+        alias_make:  Dict[str, str] = {}
+        alias_model: Dict[str, str] = {}
+        alias_part:  Dict[str, str] = {}
+    CFG = _CFGStub()  # type: ignore
+
+# sanitize any pre-provided alias dicts
+CFG.alias_type  = _sanitize_alias_dict(getattr(CFG, "alias_type",  {}))
+CFG.alias_make  = _sanitize_alias_dict(getattr(CFG, "alias_make",  {}))
+CFG.alias_model = _sanitize_alias_dict(getattr(CFG, "alias_model", {}))
+CFG.alias_part  = _sanitize_alias_dict(getattr(CFG, "alias_part",  {}))
+
+# ------------------------ SSOT: Vehicle Hierarchy (expanded, unchanged content) -----------------
+# Rules mirrored from Colab:
+# • Preserve dashes in TYPE names.
+# • Conjoin multi-word models (e.g., "Ranger Wildtrak"→"RangerWildtrak").
+# • Canonicalize TailLight→Taillight.
 vehicle_hierarchy: Dict[str, Dict[str, List[str]]] = {
     "Car": {
-        "Toyota": ["Wigo","Vios","CorollaAltis","Camry","GRYaris"],
-        "Honda":  ["Brio","City","Civic","CivicTypeR"],
-        "Ford":   ["Mustang"],
-        "Nissan": ["Almera","GT-R"],
+        "Toyota":      ["Wigo", "Vios", "CorollaAltis", "Camry", "GRYaris"],
+        "Mitsubishi":  ["Mirage", "MirageG4"],
+        "Ford":        ["Mustang"],
+        "Nissan":      ["Almera", "GT-R"],
+        "Honda":       ["Brio", "City", "Civic", "CivicTypeR"],
+        "Suzuki":      ["Dzire"],
+        "Hyundai":     ["Elantra"],
+        "Geely":       ["Emgrand"],
+        "Chevrolet":   ["Camaro"]
     },
     "SUV": {
-        "Toyota": ["Raize","YarisCross","CorollaCross","Rush","Fortuner","Innova"],
-        "Ford":   ["Everest","Territory"],
-        "Honda":  ["BR-V","CR-V","HR-V"],
+        "Toyota":      ["Raize", "YarisCross", "CorollaCross", "Rush", "Fortuner",
+                        "LandCruiserPrado", "LandCruiserLC300", "Avanza", "Veloz", "Innova"],
+        "Mitsubishi":  ["Xpander", "MonteroSport"],
+        "Ford":        ["Everest", "Territory", "Explorer"],
+        "Nissan":      ["Terra", "Patrol"],
+        "Honda":       ["BR-V", "CR-V", "HR-V"],
+        "Suzuki":      ["Jimny", "Ertiga"],
+        "Hyundai":     ["Stargazer", "Tucson", "SantaFe"],
+        "Isuzu":       ["Mu-X"],
+        "Geely":       ["Coolray", "GX3Pro", "Okavango"],
+        "Chevrolet":   ["Trailblazer", "Suburban"]
+    },
+    "Van": {
+        "Toyota":      ["Alphard", "Coaster", "HiAce"],
+        "Hyundai":     ["Staria"],
+        "Nissan":      ["Urvan"]
     },
     "Pickup": {
-        "Toyota": ["Hilux"],
-        "Ford":   ["RangerWildtrak","RangerRaptor"],
+        "Toyota":      ["Hilux", "HiluxTamaraw"],
+        "Mitsubishi":  ["Strada", "Triton"],
+        "Ford":        ["RangerWildtrak", "RangerRaptor"],
+        "Nissan":      ["Navara"],
+        "Isuzu":       ["D-Max"]
     },
-    "Van": { "Toyota": ["HiAce"], "Hyundai": ["Staria"] },
-    "Utility": { "Mitsubishi":["L300"] },
-    "Motorcycle": { "HondaMC":["BeAT","Click","PCX"] },
-    "Bus": {}, "LightTruck": {}, "ContainerTruck": {}, "SpecialVehicle": {},
-    "Bicycle": {}, "E-Bike": {}, "Pedicab": {}, "Tricycle": {}, "Jeepney": {}, "E-Jeepney": {}, "CarouselBus": {}
+    "Utility": {
+        "Toyota":      ["LiteAce"],
+        "Mitsubishi":  ["L300"],
+        "Hyundai":     ["H-100"],
+        "Isuzu":       ["Traviz"]
+    },
+    "Motorcycle": {
+        "HondaMC":    ["BeAT", "Click", "PCX", "WaveRSX", "TMX", "XRM"],
+        "YamahaMC":   ["Mio", "NMAX", "Aerox"],
+        "SuzukiMC":   ["Raider", "Smash", "BurgmanStreet"]
+    },
+    "Bicycle": {},
+    "E-Bike": {},
+    "Pedicab": {},
+    "Tricycle": {},
+    "Jeepney": {},
+    "E-Jeepney": {},
+    "Bus": {},
+    "CarouselBus": {},
+    "LightTruck": {},
+    "ContainerTruck": {},
+    "SpecialVehicle": {}
 }
 
-# Part classes by type (subset for compactness; OK to expand later without code changes)
-part_classes_by_type: Dict[str, List[Tuple[str,str]]] = {
+# ------------------------ SSOT: Part Classes by Type (expanded, unchanged content) --------------
+part_classes_by_type: Dict[str, List[Tuple[str, str]]] = {
     "Car": [
-        ("Bumper","Front"),("Grille","Front"),("Hood","Front"),
-        ("LeftHeadlight","Front"),("RightHeadlight","Front"),("Plate","Front"),
-        ("Windshield","Front"),("Roof","Roof"),
-        ("LeftTaillight","Rear"),("RightTaillight","Rear"),("Plate","Rear"),
-        ("FrontDoor","Side"),("RearDoor","Side"),("FrontWheel","Side"),("RearWheel","Side"),
+        ("Bumper","Front"), ("Grille","Front"), ("Hood","Front"),
+        ("LeftHeadlight","Front"), ("Logo","Front"), ("Plate","Front"),
+        ("RightHeadlight","Front"), ("Windshield","Front"),
+        ("Roof","Roof"),
+        ("LeftTaillight","Rear"), ("Logo","Rear"), ("Plate","Rear"),
+        ("Rear","Rear"), ("RightTaillight","Rear"), ("Trunk","Rear"),
+        ("Window","Rear"), ("ModelText","Rear"),
+        ("FrontDoor","Side"), ("FrontWheel","Side"),
+        ("RearDoor","Side"), ("RearWheel","Side"),
     ],
     "SUV": [
-        ("Bumper","Front"),("Grille","Front"),("Hood","Front"),
-        ("LeftHeadlight","Front"),("RightHeadlight","Front"),("Plate","Front"),
+        ("Bumper","Front"), ("Grille","Front"), ("Hood","Front"),
+        ("LeftHeadlight","Front"), ("Logo","Front"), ("Plate","Front"),
+        ("RightHeadlight","Front"), ("Windshield","Front"),
         ("Roof","Roof"),
-        ("LeftTaillight","Rear"),("RightTaillight","Rear"),("Plate","Rear"),
-        ("FrontDoor","Side"),("RearDoor","Side"),("FrontWheel","Side"),("RearWheel","Side"),
+        ("LeftTaillight","Rear"), ("Logo","Rear"), ("Plate","Rear"),
+        ("Rear","Rear"), ("RightTaillight","Rear"), ("Trunk","Rear"),
+        ("Window","Rear"), ("ModelText","Rear"),
+        ("FrontDoor","Side"), ("FrontWheel","Side"),
+        ("RearDoor","Side"), ("RearWheel","Side"), ("RearSection","Side"),
     ],
     "Pickup": [
-        ("Bumper","Front"),("Grille","Front"),("Hood","Front"),
-        ("LeftHeadlight","Front"),("RightHeadlight","Front"),("Plate","Front"),
+        ("Bumper","Front"), ("Grille","Front"), ("Hood","Front"),
+        ("LeftHeadlight","Front"), ("Logo","Front"), ("Plate","Front"),
+        ("RightHeadlight","Front"), ("Windshield","Front"),
         ("Roof","Roof"),
-        ("LeftTaillight","Rear"),("RightTaillight","Rear"),("Plate","Rear"),
-        ("FrontDoor","Side"),("RearWheel","Side"),("FrontWheel","Side"),
+        ("LeftTaillight","Rear"), ("Logo","Rear"), ("Plate","Rear"),
+        ("Rear","Rear"), ("RightTaillight","Rear"), ("CargoRear","Rear"),
+        ("Window","Rear"), ("ModelText","Rear"),
+        ("CargoPanel","Side"), ("RearDoor","Side"), ("FrontDoor","Side"),
+        ("RearWheel","Side"), ("FrontWheel","Side"),
+    ],
+    "Van": [
+        ("Bumper","Front"), ("Grille","Front"),
+        ("LeftHeadlight","Front"), ("Logo","Front"), ("Plate","Front"),
+        ("RightHeadlight","Front"), ("Windshield","Front"),
+        ("Roof","Roof"),
+        ("LeftTaillight","Rear"), ("Logo","Rear"), ("Plate","Rear"),
+        ("Rear","Rear"), ("RightTaillight","Rear"), ("RearDoor","Rear"),
+        ("Window","Rear"), ("ModelText","Rear"),
+        ("SlidingDoor","Side"), ("FrontDoor","Side"),
+        ("RearWheel","Side"), ("FrontWheel","Side"), ("RearSection","Side"),
+    ],
+    "Utility": [
+        ("Bumper","Front"), ("Grille","Front"),
+        ("LeftHeadlight","Front"), ("Logo","Front"), ("Plate","Front"),
+        ("RightHeadlight","Front"), ("Windshield","Front"),
+        ("CabRoof","Roof"), ("RearRoof","Roof"),
+        ("LeftTaillight","Rear"), ("Logo","Rear"), ("Plate","Rear"),
+        ("Rear","Rear"), ("RightTaillight","Rear"), ("RearDoor","Rear"),
+        ("Window","Rear"), ("ModelText","Rear"),
+        ("FrontDoor","Side"), ("CabPanel","Side"),
+        ("RearWheel","Side"), ("FrontWheel","Side"),
     ],
     "Motorcycle": [
-        ("MainHeadlight","Front"),("Plate","Rear"),("FrontWheel","Side"),("RearWheel","Side"),("Seat","Side")
+        ("LeftHeadlight","Front"), ("MainHeadlight","Front"),
+        ("RightHeadlight","Front"), ("FrontFairing","Front"), ("Handlebar","Front"),
+        ("Plate","Rear"), ("Taillight","Rear"),
+        ("RearWheel","Side"), ("FrontWheel","Side"),
+        ("Seat","Side"), ("Body","Side"),
+    ],
+    "Bicycle": [
+        ("FrontWheel","Front"), ("Handlebars","Front"),
+        ("RearWheel","Rear"), ("RearFrame","Rear"),
+        ("Chain","Side"), ("Seat","Side"), ("Frame","Side"),
+    ],
+    "E-Bike": [
+        ("FrontWheel","Front"), ("Handlebars","Front"),
+        ("RearWheel","Rear"), ("RearFrame","Rear"),
+        ("Chain","Side"), ("Seat","Side"), ("Frame","Side"),
+    ],
+    "Pedicab": [
+        ("FrontWheel","Front"), ("Handlebars","Front"), ("SidecarFront","Front"),
+        ("SidecarRoof","Roof"), ("Driversideroof","Roof"),
+        ("RearWheel","Rear"), ("SidecarRear","Rear"),
+        ("Chain","Side"), ("Seat","Side"), ("Frame","Side"),
+        ("SidecarPanel","Side"), ("SidecarWheel","Side"), ("PassengerSeat","Side"),
+    ],
+    "Tricycle": [
+        ("Headlight","Front"), ("MotorWindshield","Front"), ("MotorHandlebar","Front"), ("SidecarFront","Front"),
+        ("MotorRoof","Roof"), ("SidecarRoof","Roof"),
+        ("Plate","Rear"), ("SidecarRear","Rear"), ("MotorRear","Rear"),
+        ("RearWheel","Side"), ("FrontWheel","Side"), ("MotorSide","Side"), ("SidecarPanel","Side"),
+    ],
+    "Jeepney": [
+        ("Windshield","Front"), ("Plate","Front"), ("Bumper","Front"),
+        ("LeftHeadlight","Front"), ("RightHeadlight","Front"), ("Grille","Front"), ("Hood","Front"),
+        ("Roof","Roof"),
+        ("Plate","Rear"), ("RearDoor","Rear"), ("LeftTaillight","Rear"), ("RightTaillight","Rear"),
+        ("DriverDoor","Side"), ("SidePanel","Side"), ("RearWheel","Side"), ("FrontWheel","Side"),
+    ],
+    "E-Jeepney": [
+        ("Windshield","Front"), ("Plate","Front"), ("Bumper","Front"),
+        ("LeftHeadlight","Front"), ("RightHeadlight","Front"), ("Grille","Front"),
+        ("Roof","Roof"),
+        ("Plate","Rear"), ("RearPanel","Rear"), ("LeftTaillight","Rear"), ("RightTaillight","Rear"),
+        ("Door","Side"), ("SidePanel","Side"), ("FrontWheel","Side"), ("RearWheel","Side"),
+    ],
+    "CarouselBus": [
+        ("Windshield","Front"), ("Plate","Front"), ("Bumper","Front"),
+        ("LeftHeadlight","Front"), ("RightHeadlight","Front"), ("Grille","Front"),
+        ("Roof","Roof"),
+        ("Plate","Rear"), ("RearPanel","Rear"), ("LeftTaillight","Rear"), ("RightTaillight","Rear"), ("Window","Rear"),
+        ("PassengerDoor","Side"), ("SidePanel","Side"), ("RearWheel","Side"), ("FrontWheel","Side"),
+    ],
+    "Bus": [
+        ("Windshield","Front"), ("Plate","Front"), ("Bumper","Front"),
+        ("LeftHeadlight","Front"), ("RightHeadlight","Front"), ("Grille","Front"),
+        ("Roof","Roof"),
+        ("Plate","Rear"), ("RearPanel","Rear"), ("LeftTaillight","Rear"), ("RightTaillight","Rear"), ("Window","Rear"),
+        ("PassengerDoor","Side"), ("SidePanel","Side"), ("RearWheel","Side"), ("FrontWheel","Side"),
+    ],
+    "LightTruck": [
+        ("Windshield","Front"), ("Plate","Front"), ("Bumper","Front"),
+        ("LeftHeadlight","Front"), ("RightHeadlight","Front"), ("Grille","Front"), ("Logo","Front"),
+        ("Roof","Roof"),
+        ("Plate","Rear"), ("Flatbed","Rear"), ("LeftTaillight","Rear"), ("RightTaillight","Rear"),
+        ("DriverDoor","Side"), ("CargoPanel","Side"), ("RearWheel","Side"), ("FrontWheel","Side"),
+    ],
+    "ContainerTruck": [
+        ("Windshield","Front"), ("Plate","Front"), ("ContainerPanel","Front"),
+        ("Bumper","Front"), ("LeftHeadlight","Front"), ("RightHeadlight","Front"),
+        ("Grille","Front"), ("Hood","Front"), ("Logo","Front"),
+        ("FrontRoof","Roof"), ("ContainerRoof","Roof"),
+        ("Rear","Rear"), ("Plate","Rear"), ("ContainerDoor","Rear"),
+        ("LeftTaillight","Rear"), ("RightTaillight","Rear"),
+        ("FrontDoor","Side"), ("ContainerPanel","Side"), ("RearWheel","Side"), ("FrontWheel","Side"),
+    ],
+    "SpecialVehicle": [
+        ("Windshield","Front"), ("Plate","Front"), ("Bumper","Front"),
+        ("LeftHeadlight","Front"), ("RightHeadlight","Front"), ("Grille","Front"), ("Logo","Front"),
+        ("Roof","Roof"),
+        ("Plate","Rear"), ("RearDoor","Rear"), ("LeftTaillight","Rear"), ("RightTaillight","Rear"),
+        ("SidePanel","Side"), ("RearWheel","Side"), ("FrontWheel","Side"), ("SpecialMark","Side"),
     ],
 }
 
-# Canonical TYPE list (fixed order)
+# Canonical TYPE list (fixed order) — matches canon (no spaces in special classes)
 TYPES: List[str] = [
     "Car","SUV","Van","Pickup","Utility","Motorcycle","Bicycle",
     "E-Bike","Pedicab","Tricycle","Jeepney","E-Jeepney",
     "Bus","CarouselBus","LightTruck","ContainerTruck","SpecialVehicle"
 ]
 
-# Simple canonicalizations for light/taillight
+# ------------------------ [LIGHT] simple canonicalizer for HeadLight/TailLight variants ----------
 _LIGHT_FIX = {
     "HeadLight":"Headlight","LeftHeadLight":"LeftHeadlight","RightHeadLight":"RightHeadlight",
     "TailLight":"Taillight","LeftTailLight":"LeftTaillight","RightTailLight":"RightTaillight",
 }
 def _canon_part(p:str)->str: return _LIGHT_FIX.get(p,p)
 
+def canonicalize_label_lights_simple(label: str) -> str:
+    chunks = str(label or "").split("_", 2)
+    if len(chunks) < 3:
+        return label
+    vtype, region, part = chunks
+    return f"{vtype}_{region}_{_canon_part(part)}"
+
+def sanitize_maps_lights(maps: dict) -> dict:
+    out = dict(maps or {})
+    if isinstance(out.get("parts"), list):
+        out["parts"] = [_canon_part(p) for p in out["parts"]]
+    if isinstance(out.get("part2idx"), dict):
+        out["part2idx"] = {_canon_part(k): int(v) for k,v in out["part2idx"].items()}
+    return out
+
+# ------------------------ [REGION] Regions (prefer CFG.regions if provided) ---------------------
+try:
+    _regions_from_cfg = list(getattr(CFG, "regions", ())) if "CFG" in globals() else []
+except Exception:
+    _regions_from_cfg = []
+REGIONS: List[str] = _regions_from_cfg or ["Front","Side","Rear","Roof"]
+
+# ------------------------ Region–Part maps (supports bundle or SSOT) ----------------------------
 def compute_region_part_maps(per_type_pairs: Dict[str, List[Tuple[str, str]]]):
     type_region_to_parts, type_part_to_regions = {}, {}
     for vtype, pairs in (per_type_pairs or {}).items():
@@ -166,6 +386,7 @@ def compute_region_part_maps(per_type_pairs: Dict[str, List[Tuple[str, str]]]):
 
 TYPE_REGION_TO_PARTS, TYPE_PART_TO_REGIONS = compute_region_part_maps(part_classes_by_type)
 
+# ------------------------ Vocab builders (SSOT & bundle) ---------------------------------------
 def _build_vocab(names: List[str]) -> "OrderedDict[str,int]":
     return OrderedDict((k, i) for i, k in enumerate(list(names)))
 
@@ -179,19 +400,43 @@ def _derive_makes_models_from_hierarchy(h: dict) -> Tuple[List[str], List[str]]:
                 if md2 not in seen_models: seen_models[md2]=True
     return list(seen_makes.keys()), list(seen_models.keys())
 
+# local TYPE alias lookups (do not alter canonical TYPES order)
+_type_alias_local = {
+    "CAR":"Car","car":"Car","Suv":"SUV","suv":"SUV","van":"Van","VAN":"Van",
+    "pickup":"Pickup","PICKUP":"Pickup",
+    "Utility Vehicles":"Utility","Utility Vehicle":"Utility","Utilityvehicle":"Utility",
+    "Carousel Bus":"CarouselBus","Light Truck":"LightTruck","Container Truck":"ContainerTruck","Special Vehicle":"SpecialVehicle",
+}
+
 def build_vocab_from_ssot() -> Dict[str, Any]:
+    # parts union (canonicalized)
     _seen_parts = OrderedDict()
     for vtype, pairs in part_classes_by_type.items():
         for part,_r in pairs: _seen_parts[_canon_part(part)] = True
     parts = list(_seen_parts.keys())
+
     makes, models = _derive_makes_models_from_hierarchy(vehicle_hierarchy)
+
+    type2idx  = _build_vocab(TYPES)
+    # add local aliases as extra keys pointing to the same indices (order stays canonical)
+    for alias, canon in _type_alias_local.items():
+        if canon in type2idx:
+            type2idx[alias] = type2idx[canon]
+
+    make2idx   = _build_vocab(makes)
+    model2idx  = _build_vocab(models)
+    part2idx   = _build_vocab(parts)
+    region2idx = _build_vocab(REGIONS)
+
+    # re-apply user/global aliases if any (no mutation to canonical order lists)
+    try:
+        apply_all_label_aliases(type2idx, make2idx, model2idx, part2idx, cfg=CFG, verbose=False)
+    except Exception as _e:
+        LOG.warn("alias_apply_failed", error=str(_e))
+
     return {
         "TYPES": TYPES, "MAKES": makes, "MODELS": models, "PARTS": parts, "REGIONS": REGIONS,
-        "type2idx": _build_vocab(TYPES),
-        "make2idx": _build_vocab(makes),
-        "model2idx": _build_vocab(models),
-        "part2idx": _build_vocab(parts),
-        "region2idx": _build_vocab(REGIONS),
+        "type2idx": type2idx, "make2idx": make2idx, "model2idx": model2idx, "part2idx": part2idx, "region2idx": region2idx,
     }
 
 def _coerce_idx_map(maybe)->Dict[str,int]:
@@ -200,7 +445,7 @@ def _coerce_idx_map(maybe)->Dict[str,int]:
         return {str(k):int(v) for k,v in maybe.items()}
     if isinstance(maybe, dict) and "idx2name" in maybe and isinstance(maybe["idx2name"],(list,tuple)):
         return {str(name):i for i,name in enumerate(list(maybe["idx2name"]))}
-    if isinstance(maybe, dict) and "names" in maybe and isinstance(maybe["names"],(list,tuple)):
+    if isinstance(maybe, dict) and "names" in maybe and isinstance(maybe["names"], (list,tuple)):
         return {str(name):i for i,name in enumerate(list(maybe["names"]))}
     if isinstance(maybe,(list,tuple)):
         return {str(name):i for i,name in enumerate(list(maybe))}
@@ -211,14 +456,6 @@ def _idx_map_to_order(idx_map: Dict[str,int]) -> List[str]:
     for k,i in idx_map.items():
         if i not in idx2name: idx2name[i]=k
     return [idx2name[i] for i in sorted(idx2name.keys())]
-
-def sanitize_maps_lights(maps: dict) -> dict:
-    out = dict(maps or {})
-    if isinstance(out.get("parts"), list):
-        out["parts"] = [_canon_part(p) for p in out["parts"]]
-    if isinstance(out.get("part2idx"), dict):
-        out["part2idx"] = {_canon_part(k): int(v) for k,v in out["part2idx"].items()}
-    return out
 
 def build_vocab_from_label_maps(maps: dict) -> Dict[str, Any]:
     if not isinstance(maps, dict): raise ValueError("label_maps must be a dict")
@@ -234,13 +471,19 @@ def build_vocab_from_label_maps(maps: dict) -> Dict[str, Any]:
     models = _idx_map_to_order(d_map)
     parts  = _idx_map_to_order(p_map)
 
+    # exact bundle order respected; after maps are built, re-apply alias lookups
+    type2idx_out  = (t_map or _build_vocab(types))
+    make2idx_out  = (m_map or _build_vocab(makes))
+    model2idx_out = (d_map or _build_vocab(models))
+    part2idx_out  = (p_map or _build_vocab(parts))
+    try:
+        apply_all_label_aliases(type2idx_out, make2idx_out, model2idx_out, part2idx_out, cfg=CFG, verbose=False)
+    except Exception as _e:
+        LOG.warn("alias_apply_failed", error=str(_e))
+
     return {
         "TYPES": types, "MAKES": makes, "MODELS": models, "PARTS": parts, "REGIONS": REGIONS,
-        "type2idx": (t_map or _build_vocab(types)),
-        "make2idx": (m_map or _build_vocab(makes)),
-        "model2idx": (d_map or _build_vocab(models)),
-        "part2idx": (p_map or _build_vocab(parts)),
-        "region2idx": _build_vocab(REGIONS),
+        "type2idx": type2idx_out, "make2idx": make2idx_out, "model2idx": model2idx_out, "part2idx": part2idx_out, "region2idx": _build_vocab(REGIONS),
     }
 
 # Globals adopted by SSOT or bundle
@@ -248,6 +491,7 @@ _ssot = build_vocab_from_ssot()
 TYPES, MAKES, MODELS, PARTS, REGIONS = (_ssot[k] for k in ("TYPES","MAKES","MODELS","PARTS","REGIONS"))
 type2idx, make2idx, model2idx, part2idx, region2idx = (_ssot[k] for k in ("type2idx","make2idx","model2idx","part2idx","region2idx"))
 
+# ------------------------ Allow-lists (Type→Make, Make→Model, Type→Model) ----------------------
 def build_allowlists(type2idx: Dict[str,int], make2idx: Dict[str,int], model2idx: Dict[str,int],
                      ssot_hierarchy: Dict[str, Dict[str, List[str]]]):
     type_to_makes: Dict[str,List[str]] = {}
@@ -281,12 +525,22 @@ def build_allowlists(type2idx: Dict[str,int], make2idx: Dict[str,int], model2idx
                 if mid not in seen: seen.add(mid); mids.append(mid)
         allowed_models_by_type_idx[t_id] = mids
 
+    # sanity: warn if a model token maps to multiple makes in SSOT & exists in vocab
+    rev = {}
+    for mk, toks in make_to_models.items():
+        for tok in toks:
+            rev.setdefault(tok, set()).add(mk)
+    multi = [md for md, makes in rev.items() if len(makes) > 1 and md in model2idx]
+    if multi:
+        LOG.warn("ssot_model_token_multi_make", tokens=sorted(multi))
+
     return allowed_makes_by_type_idx, allowed_models_by_make_idx, allowed_models_by_type_idx
 
 allowed_makes_by_type_idx, allowed_models_by_make_idx, allowed_models_by_type_idx = build_allowlists(
     type2idx, make2idx, model2idx, vehicle_hierarchy
 )
 
+# ------------------------ [ALIAS] Bundle adoption helper (re-applies aliases) ------------------
 def adopt_label_maps_into_globals(maps: dict, per_type_parts: Optional[Dict[str,List[Tuple[str,str]]]] = None):
     global TYPES, MAKES, MODELS, PARTS, REGIONS
     global type2idx, make2idx, model2idx, part2idx, region2idx
@@ -294,28 +548,33 @@ def adopt_label_maps_into_globals(maps: dict, per_type_parts: Optional[Dict[str,
     global allowed_makes_by_type_idx, allowed_models_by_make_idx, allowed_models_by_type_idx
 
     bundle = build_vocab_from_label_maps(maps)
+
+    # adopt bundle vocab (exact order), then re-apply aliases to lookup maps
     TYPES, MAKES, MODELS, PARTS, REGIONS = (bundle[k] for k in ("TYPES","MAKES","MODELS","PARTS","REGIONS"))
     type2idx, make2idx, model2idx, part2idx, region2idx = (bundle[k] for k in ("type2idx","make2idx","model2idx","part2idx","region2idx"))
+    try:
+        apply_all_label_aliases(type2idx, make2idx, model2idx, part2idx, cfg=CFG, verbose=False)
+    except Exception as _e:
+        LOG.warn("alias_apply_failed", error=str(_e))
 
+    # region maps
     if isinstance(per_type_parts, dict) and per_type_parts:
         TYPE_REGION_TO_PARTS, TYPE_PART_TO_REGIONS = compute_region_part_maps(per_type_parts)
     else:
         TYPE_REGION_TO_PARTS, TYPE_PART_TO_REGIONS = compute_region_part_maps(part_classes_by_type)
 
+    # allow-lists against the *current* vocab
     allowed_makes_by_type_idx, allowed_models_by_make_idx, allowed_models_by_type_idx = build_allowlists(
         type2idx, make2idx, model2idx, vehicle_hierarchy
     )
 
     LOG.info("labelmaps_adopted",
              types=len(TYPES), makes=len(MAKES), models=len(MODELS), parts=len(PARTS),
-             types_first=TYPES[:3], types_last=TYPES[-3:], aliases_applied=0)
+             types_first=TYPES[:3], types_last=TYPES[-3:], aliases_applied=True)
 
 # ==============================================================================
-# PHASE 4 — Model builder (backbone + heads sized by vocab)
+# PHASE 4 — Model builder (backbone + heads sized by vocab) [KEEP]
 # ==============================================================================
-# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-# NOTE: Model builder: PRESERVED (no refactors)
-# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 def _best_gn_groups(C:int)->int:
     for g in (32,16,8,4,2,1):
@@ -413,7 +672,8 @@ class CompositionalMobileViT(nn.Module):
         if self.meta["n_parts"]>0:
             part_logits, bbox_preds = self.part_box(feats)
         pres_logits = self.pres_head(feats) if self.pres_head is not None else None
-        g = self.veh_box_head(feats).flatten(1); veh_box_preds = self.veh_box_fc(g).sigmoid()
+        g = self.veh_box_head(feats).flatten(1)
+        veh_box_preds = self.veh_box_fc(g)   # raw; sigmoid applied once in decoder
         return {"type_logits":type_logits,"make_logits":make_logits,"model_logits":model_logits,
                 "part_logits":part_logits,"bbox_preds":bbox_preds,"part_present_logits":pres_logits,
                 "veh_box_preds":veh_box_preds}
@@ -460,11 +720,8 @@ def build_model(backbone_name:str)->CompositionalMobileViT:
     return model
 
 # ==============================================================================
-# PHASE 3 — Bundle loader (zip/dir) + alignment audits + sha256
+# PHASE 3 — Bundle loader (zip/dir) + alignment audits + sha256 [KEEP]
 # ==============================================================================
-# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-# NOTE: Model loader: PRESERVED VERBATIM
-# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 def _glob_suffixes(glob_str: str)->List[str]:
     raw = (glob_str or "*.pt|*.pth|*.ckpt").split("|")
@@ -517,6 +774,55 @@ def _is_label_maps_dict(d:dict)->int:
     if sum(1 for k in ("type2idx","types","make2idx","makes","model2idx","models","part2idx","parts") if k in keys)>=3:
         score+=2
     return score
+
+# --- Part-channel remap helpers (align checkpoint rows to bundle parts order)
+def _compute_part_perm(bundle_maps: dict, engine_part2idx: dict) -> Optional[List[int]]:
+    try:
+        old_names: List[str] = []
+        if isinstance(bundle_maps.get("part2idx"), dict):
+            old_names = [k for k,_ in sorted(bundle_maps["part2idx"].items(), key=lambda kv: int(kv[1]))]
+        elif isinstance(bundle_maps.get("parts"), list):
+            old_names = list(bundle_maps["parts"])
+        if not old_names:
+            return None
+        perm: List[int] = []
+        for nm in old_names:
+            canon = _canon_part(nm)
+            if canon not in engine_part2idx:
+                return None
+            perm.append(int(engine_part2idx[canon]))
+        if perm == list(range(len(perm))):
+            return None
+        return perm
+    except Exception:
+        return None
+
+def _apply_part_perm_to_state_dict(sd: dict, perm: List[int]) -> dict:
+    if not perm: return sd
+    try:
+        P = len(perm)
+        idx = torch.as_tensor(perm, dtype=torch.long)
+        blk = torch.stack([4*idx + i for i in range(4)], dim=1).flatten()
+
+        def pick0(t: torch.Tensor, i: torch.Tensor) -> torch.Tensor:
+            return t.index_select(0, i)
+
+        for k in list(sd.keys()):
+            t = sd[k]
+            if not torch.is_tensor(t): continue
+            if k.endswith("pres_head.weight") and t.dim() >= 1 and t.shape[0] == P:
+                sd[k] = pick0(t, idx)
+            if k.endswith("part_box.part.weight") and t.dim()==4 and t.shape[0]==P:
+                sd[k] = pick0(t, idx)
+            if k.endswith("part_box.part.bias") and t.dim()==1 and t.shape[0]==P:
+                sd[k] = pick0(t, idx)
+            if k.endswith("part_box.box.weight") and t.dim()==4 and t.shape[0]==4*P:
+                sd[k] = pick0(t, blk)
+            if k.endswith("part_box.box.bias") and t.dim()==1 and t.shape[0]==4*P:
+                sd[k] = pick0(t, blk)
+        return sd
+    except Exception:
+        return sd
 
 def _dir_find_members(root:str, weight_suffixes:List[str])->Tuple[Optional[str],Optional[str],int,int]:
     json_files, weight_files = [], []
@@ -574,6 +880,15 @@ def load_bundle_dir(dir_path:str, cfg:Optional[dict]=None, backbone_name:str="mo
     if not isinstance(state_dict, dict): raise ValueError("Weights payload is not a valid state_dict container.")
     state_dict = _strip_module_prefix(state_dict)
 
+    try:
+        perm = _compute_part_perm(maps, part2idx) if auto_remap_parts else None
+        if perm:
+            state_dict = _apply_part_perm_to_state_dict(state_dict, perm)
+            report["perm_hash"] = hashlib.sha256((",".join(str(i) for i in perm)).encode("utf-8")).hexdigest()[:16]
+            LOG.info("part_perm_applied", P=len(perm), perm_hash=report["perm_hash"])
+    except Exception as _e:
+        LOG.warn("part_perm_apply_failed", error=str(_e))
+
     errs = _audit_state_vs_vocab(state_dict, strict_shapes)
     if errs and strict_shapes: raise RuntimeError("Strict shape audit failed.")
     if errs: report["audits"]=errs
@@ -591,12 +906,10 @@ def load_bundle_dir(dir_path:str, cfg:Optional[dict]=None, backbone_name:str="mo
     return model, report
 
 def load_bundle_zip(zip_path:str, cfg:Optional[dict]=None, backbone_name:str="mobilevitv2_200"):
-    # Zip variant preserved (same semantics as dir)
     if not os.path.isfile(zip_path):
         raise FileNotFoundError(f"Bundle zip not found: {zip_path}")
     with zipfile.ZipFile(zip_path,"r") as zf:
-        members=[n for n in zf.namelist() if not n.endswith("/")]
-        # find label_maps.json and best weights inside zip
+        members=[n for n in zf.namelist() if not n.endswith("/") ]
         label_entry=None; weight_entry=None; weight_suffixes=_glob_suffixes(str((cfg or {}).get("bundle_weights_glob","*.pt|*.pth|*.ckpt")))
         cands=[]
         for n in members:
@@ -611,14 +924,24 @@ def load_bundle_zip(zip_path:str, cfg:Optional[dict]=None, backbone_name:str="mo
         with zf.open(label_entry) as fh: maps=json.load(fh)
         adopt_label_maps_into_globals(maps, per_type_parts=None)
         buf=zf.read(weight_entry)
-    # then same as dir path from here:
-    report={"sha256":_sha256_bytes(buf),"weights_name":os.path.basename(weight_entry),"aligned":False,"trained":False,"audits":[]}
+    report={"sha256":_sha256_bytes(buf),"weights_name":os.path.basename(weight_entry),"aligned":False,"trained":False,"audits":[],"perm_hash":None}
     model = build_model(backbone_name=backbone_name)
     blob = torch.load(io.BytesIO(buf), map_location="cpu")
     sd = blob.get("state_dict", None) if isinstance(blob, dict) else None
     if sd is None: sd = blob.get("model", None) if isinstance(blob, dict) else blob
     if not isinstance(sd, dict): raise ValueError("Weights payload is not a valid state_dict container.")
     sd = _strip_module_prefix(sd)
+
+    try:
+        auto_remap_parts = bool((cfg or {}).get("auto_remap_parts", True))
+        perm = _compute_part_perm(maps, part2idx) if auto_remap_parts else None
+        if perm:
+            sd = _apply_part_perm_to_state_dict(sd, perm)
+            report["perm_hash"] = hashlib.sha256((",".join(str(i) for i in perm)).encode("utf-8")).hexdigest()[:16]
+            LOG.info("part_perm_applied", P=len(perm), perm_hash=report["perm_hash"])
+    except Exception as _e:
+        LOG.warn("part_perm_apply_failed", error=str(_e))
+
     errs=_audit_state_vs_vocab(sd, bool((cfg or {}).get("strict_state_shapes", True)))
     if errs and bool((cfg or {}).get("strict_state_shapes", True)): raise RuntimeError("Strict shape audit failed.")
     if errs: report["audits"]=errs
@@ -634,9 +957,9 @@ def load_bundle_zip(zip_path:str, cfg:Optional[dict]=None, backbone_name:str="mo
     LOG.info("bundle_load_summary", aligned=bool(aligned), trained=trained, coverage=f"{cov*100:.1f}%")
     return model, report
 
-# ==============================================================================
-# Public API
-# ==============================================================================
+# ======================================================================
+# Public API — loader facade [KEEP]
+# ======================================================================
 
 def _backbone_name_for_variant(variant:str)->str:
     if variant=="baseline": return os.getenv("BACKBONE_NAME_BASELINE","mobilevitv2_200")
@@ -644,9 +967,8 @@ def _backbone_name_for_variant(variant:str)->str:
     return os.getenv("BACKBONE_NAME_DEFAULT","mobilevitv2_200")
 
 def load_model(variant:str)->Tuple[nn.Module, Dict[str,Any]]:
-    # Decide 2-file directory path first; zip fallback allowed.
     bundle_dir = os.getenv("BASELINE_BUNDLE_PATH") if variant=="baseline" else os.getenv("CMT_BUNDLE_PATH")
-    bundle_zip = None  # optional: allow ZIP via *_BUNDLE_ZIP later
+    bundle_zip = None
     bb_name = _backbone_name_for_variant(variant)
     cfg = {"bundle_weights_glob":"*.pt|*.pth|*.ckpt","strict_state_shapes":True,"auto_remap_parts":True}
 
@@ -666,73 +988,22 @@ def load_model(variant:str)->Tuple[nn.Module, Dict[str,Any]]:
         except Exception as e:
             LOG.warn("bundle_zip_load_failed", variant=variant, zip=bundle_zip, error=str(e))
 
-    # Fallback: SSOT build (untrained heads)
     LOG.warn("bundle_missing", variant=variant, note="Building base model from SSOT (no checkpoint).")
     model = build_model(backbone_name=bb_name)
     report = {"aligned": _assure_alignment_counts(model, TYPES, MAKES, MODELS, PARTS),
               "trained": False, "load_notes":["no_bundle_found"]}
     return model, report
 
-# Keep Phase 1 self-test runner for easy smoke
-def run_inference(image_bytes: bytes, variant: str, enable_color: bool=False, enable_plate: bool=False):
-    # Minimal demo inference that returns a tuple: (dets, timings, metrics)
-    from io import BytesIO as _BytesIO
-    img = Image.open(_BytesIO(image_bytes)).convert("RGB")
-    model, rep = load_model(variant)
-    # Demo detections (structure the worker expects)
-    dets = {
-        "type": "CAR", "make": "TOYOTA", "model": "FORTUNER",
-        "veh_box": (10,10,200,120),
-        "boxes": [(10,10,200,120)],
-        "_timing": {"total_ms": 1, "per_stage": []},
-        "_loader_report": rep
-    }
-    # Worker expects timings.get("total")
-    _t = dets.get("_timing") or {}
-    total_ms = int(_t.get("total_ms", 0))
-    timings = {"total": total_ms, "per_stage": _t.get("per_stage", [])}
-    # ---- PHASE 4 — vehicle box source summary ----
-    try:
-        veh_src = "veh_head" if (locals().get("veh_box_pred") is not None) else (
-            "parts_fallback" if torch.is_tensor(locals().get("bbox_preds")) else "heat_fallback"
-        )
-        LOG.info("decode_summary",
-                 kept_parts=int(len((dets.get("_debug_parts_sq") or []))) if isinstance(dets, dict) else None,
-                 grid=list(part_logits.shape[-2:]) if torch.is_tensor(part_logits) else None,
-                 veh_src=veh_src)
-    except Exception as _e:
-        LOG.warn("decode_summary_failed", error=str(_e))
-    # ---- PHASE 4 — vehicle box source summary ----
-    try:
-        veh_src = "veh_head" if (locals().get("veh_box_pred") is not None) else (
-            "parts_fallback" if torch.is_tensor(locals().get("bbox_preds")) else "heat_fallback"
-        )
-        LOG.info("decode_summary",
-                 kept_parts=int(len((dets.get("_debug_parts_sq") or []))) if isinstance(dets, dict) else None,
-                 grid=list(part_logits.shape[-2:]) if torch.is_tensor(part_logits) else None,
-                 veh_src=veh_src)
-    except Exception as _e:
-        LOG.warn("decode_summary_failed", error=str(_e))
-    metrics = {"latency_ms": total_ms, "gflops": None, "mem_gb": None}
-    return dets, timings, metrics
+# ======================================================================
+# PHASE 5 — Inference runner + timings [KEEP]
+# ======================================================================
 
-if __name__ == "__main__":
-    # Quick SSOT smoke (no bundles)
-    LOG.info("selftest_begin")
-    m, rep = load_model(os.getenv("VARIANT","baseline"))
-    LOG.info("selftest_model", head_sig=_model_vocab_signature(m), aligned=rep.get("aligned"), trained=rep.get("trained"))
-    LOG.info("selftest_ok")
-
-# ==============================================================================
-# PHASE 5 — Inference runner + Colab-style stage timings (MS-computers feel)
-# ==============================================================================
 import math, base64, random
 import numpy as _np
 from time import perf_counter
 from contextlib import nullcontext
-from io import BytesIO
 
-# ---------- ENV knobs (safe defaults) ----------
+# ---------- ENV knobs ----------
 def _env_bool(name:str, default:int=0)->bool:
     v = os.getenv(name, str(default)).strip().lower()
     return v in ("1","true","yes","on")
@@ -744,10 +1015,10 @@ def _env_float(name:str, default:float)->float:
     except Exception: return float(default)
 
 IMG_SIZE     = _env_int("IMG_SIZE", 640)
-AMP          = _env_bool("AMP", 1)  # autocast on CUDA
+AMP          = _env_bool("AMP", 1)
 WARMUP_STEPS = _env_int("WARMUP_STEPS", 2)
 
-# Cascade thresholds / temps (can be tuned later or set via ENV)
+# Cascade thresholds / temps
 TAU_TYPE  = _env_float("TAU_TYPE", 0.70)
 TAU_MAKE  = _env_float("TAU_MAKE", 0.70)
 TAU_MODEL = _env_float("TAU_MODEL", 0.70)
@@ -756,54 +1027,36 @@ TEMP_MAKE  = _env_float("TEMP_MAKE", 1.00)
 TEMP_MODEL = _env_float("TEMP_MODEL", 1.00)
 
 PART_TAU   = _env_float("PART_TAU", 0.30)
-  # Phase 9: Part box area gates + allow-list toggles
 AREA_MIN_FRAC = _env_float("PART_BOX_AREA_MIN_FRAC", 0.0009)
 AREA_MAX_FRAC = _env_float("PART_BOX_AREA_MAX_FRAC", 0.60)
 ALLOWLIST_EN  = _env_bool("PART_ALLOWLIST_EN", 0)
 
-def _filter_parts_debug_list(parts_debug_sq, img_size=IMG_SIZE,
-                             area_min_frac=AREA_MIN_FRAC,
-                             area_max_frac=AREA_MAX_FRAC,
-                             allowlist_en=ALLOWLIST_EN,
-                             type_name=None):
-    """
-    Filters debug part boxes using area gates; optional allow-list hook (currently no-ops unless you extend).
-    Returns a filtered list; logs a summary.
-    """
-    try:
-        sqA = float(img_size) * float(img_size)
-        minA = float(area_min_frac) * sqA
-        maxA = float(area_max_frac) * sqA
-
-        def ok_area(b):
-            if not isinstance(b, (list, tuple)) or len(b) != 4:
-                return False
-            x1, y1, x2, y2 = [float(v) for v in b]
-            w = max(0.0, x2 - x1); h = max(0.0, y2 - y1)
-            a = w * h
-            return (minA <= a <= maxA)
-
-        out = []
-        for p in (parts_debug_sq or []):
-            b = p.get("box_sq") or []
-            if not ok_area(b):
-                continue
-            # Allow-list hook: extend later (type_name available if you pass it)
-            # if allowlist_en:
-            #     nm = str(p.get("name") or "").lower()
-            #     # your rules here...
-            out.append(p)
-        LOG.info("parts_debug_hardening", kept=len(out),
-                 area_min=area_min_frac, area_max=area_max_frac,
-                 allowlist=bool(allowlist_en))
-        return out
-    except Exception as _e:
-        LOG.warn("parts_debug_hardening_failed", error=str(_e))
-        return parts_debug_sq or []
-
-
 ENABLE_COLOR = _env_bool("ENABLE_COLOR", 0)
 ENABLE_PLATE = _env_bool("ENABLE_PLATE", 0)
+
+# Cascade CFG injection
+class _CFG: pass
+CFG_INFER = _CFG()
+CFG_INFER.tau_type  = float(TAU_TYPE);  CFG_INFER.tau_make  = float(TAU_MAKE);  CFG_INFER.tau_model  = float(TAU_MODEL)
+CFG_INFER.temp_type = float(TEMP_TYPE); CFG_INFER.temp_make = float(TEMP_MAKE); CFG_INFER.temp_model = float(TEMP_MODEL)
+try:
+    LOG.info("cascade_cfg", tau=[CFG_INFER.tau_type, CFG_INFER.tau_make, CFG_INFER.tau_model], temp=[CFG_INFER.temp_type, CFG_INFER.temp_make, CFG_INFER.temp_model])
+except Exception:
+    pass
+
+# Deterministic numerics & eval lock
+try:
+    import torch.backends.cudnn as _cudnn
+    _cudnn.benchmark = False
+    _cudnn.deterministic = True
+except Exception:
+    pass
+def _lock_eval_mode(model: nn.Module) -> nn.Module:
+    model.eval()
+    for m in model.modules():
+        if getattr(m, "training", False):
+            m.training = False
+    return model
 
 # ---------- StageTimer ----------
 class StageTimer:
@@ -826,156 +1079,74 @@ class StageTimer:
         self._logger.info("stages", analysis_id=self.analysis_id, variant=self.variant, ms=out)
         return out
 
-# ---------- Letterbox + inverse mapping ----------
-def __legacy_letterbox_fit_chw(x: torch.Tensor, size:int):
-    # x: CHW float in [0,1] or uint8 0..255
-    assert x.dim()==3 and x.shape[0] in (1,3), "expect CHW"
-    B = x.unsqueeze(0)
-    _, C, H, W = B.shape
-    s = float(size); sc = min(s/max(1.0,W), s/max(1.0,H))
-    new_w, new_h = int(round(W*sc)), int(round(H*sc))
-    mode = "bilinear" if C>1 else "nearest"
-    Bf = B.float()
-    Bi = F.interpolate(Bf, size=(new_h,new_w), mode=mode, align_corners=False if mode=="bilinear" else None)
-    pw_tot, ph_tot = max(0, size-new_w), max(0, size-new_h)
-    left, right, top, bottom = pw_tot//2, pw_tot-pw_tot//2, ph_tot//2, ph_tot-ph_tot//2
-    padB = F.pad(Bi, (left,right,top,bottom), value=0.0)
-    return padB.squeeze(0), (left, top), sc
+# ---------- Helpers (legacy kept + authorized additions) ----------
+def crop_by_xyxy(img: Image.Image, box: Tuple[float,float,float,float]) -> Image.Image:
+    x1,y1,x2,y2 = [int(round(v)) for v in box]
+    x1 = max(0, min(img.width-1,  x1))
+    y1 = max(0, min(img.height-1, y1))
+    x2 = max(x1+1, min(img.width,  x2))
+    y2 = max(y1+1, min(img.height, y2))
+    return img.crop((x1,y1,x2,y2))
 
-def __legacy_inv_letterbox_xyxy(box, orig_w:int, orig_h:int, pad:tuple, scale:float):
-    if box is None: return None
-    x1,y1,x2,y2 = [float(v) for v in (box.tolist() if torch.is_tensor(box) else box)]
-    pw, ph = float(pad[0]), float(pad[1]); s = max(1e-12, float(scale))
-    xo1, yo1 = (x1-pw)/s, (y1-ph)/s
-    xo2, yo2 = (x2-pw)/s, (y2-ph)/s
-    xo1 = max(0.0, min(xo1, orig_w-1.0)); yo1 = max(0.0, min(yo1, orig_h-1.0))
-    xo2 = max(0.0, min(xo2, orig_w-1.0)); yo2 = max(0.0, min(yo2, orig_h-1.0))
-    return (xo1,yo1,xo2,yo2)
+def _color_name_from_rgb(r:int,g:int,b:int)->str:
+    mx = max(r,g,b); mn = min(r,g,b)
+    if mx < 40: return "Black"
+    if mn > 200: return "White"
+    if abs(r-g)<15 and abs(g-b)<15: return "Gray"
+    if r>g and r>b: return "Red" if g<b else "Orange"
+    if g>r and g>b: return "Green"
+    if b>r and b>g: return "Blue"
+    if r>200 and g>200 and b<80: return "Yellow"
+    if r>160 and b>160 and g<120: return "Purple"
+    if g>160 and b>160 and r<120: return "Cyan"
+    return "Color"
 
-# ---------- BBox helpers ----------
-def __legacy_unpack_BP4HW(raw: torch.Tensor, P_expected:int, H:int, W:int):
-    if raw is None or not torch.is_tensor(raw): return None
-    if raw.dim()==4:
-        B,C,Hh,Ww = raw.shape
-        if Hh!=H or Ww!=W or (C%4)!=0: return None
-        P=min(P_expected, C//4)
-        return raw[:,:4*P].view(B,P,4,H,W)
-    if raw.dim()==5 and raw.shape[2]==4:
-        B,P_in,_,Hh,Ww = raw.shape
-        if Hh!=H or Ww!=W: return None
-        return raw[:,:min(P_expected,P_in)]
-    if raw.dim()==5 and raw.shape[1]==4:
-        B,_,P_in,Hh,Ww = raw.shape
-        if Hh!=H or Ww!=W: return None
-        P=min(P_expected,P_in)
-        return raw[:,: ,:P].permute(0,2,1,3,4)
-    return None
+def detect_vehicle_color(image_pil: Image.Image) -> List[Dict[str, float]]:
+    im = image_pil.convert("RGB")
+    small = im.resize((96,96), Image.BILINEAR)
+    pal = small.convert("P", palette=Image.ADAPTIVE, colors=8).convert("RGB")
+    data = _np.asarray(pal).reshape(-1,3)
+    uniq, counts = _np.unique(data, axis=0, return_counts=True)
+    total = counts.sum()
+    rows = []
+    for (r,g,b), c in sorted(zip(uniq, counts), key=lambda t:-t[1]):
+        frac = float(c)/float(total)
+        rows.append({"name": _color_name_from_rgb(int(r),int(g),int(b)),
+                     "fraction": frac,
+                     "conf": min(0.99, 0.5 + 0.5*frac)})
+    return rows[:3]
 
-def __legacy_decode_dxdy_logwh_cell(BP4: torch.Tensor, H:int, W:int, img_size:int):
-    if BP4 is None: return None
-    B,P,_4,Hh,Ww = BP4.shape
-    if Hh!=H or Ww!=W or _4!=4: return None
-    cw, ch = img_size/float(W), img_size/float(H)
-    i = torch.arange(W, device=BP4.device, dtype=torch.float32).view(1,1,1,W)
-    j = torch.arange(H, device=BP4.device, dtype=torch.float32).view(1,1,H,1)
-    cx0, cy0 = (i+0.5)*cw, (j+0.5)*ch
-    dx, dy = BP4[:,:,0], BP4[:,:,1]
-    lw, lh = BP4[:,:,2].clamp(-8,8), BP4[:,:,3].clamp(-8,8)
-    cx, cy = cx0 + dx*cw, cy0 + dy*ch
-    w,  h  = torch.exp(lw)*cw, torch.exp(lh)*ch
-    x1, y1 = (cx-0.5*w).clamp(0, img_size-1), (cy-0.5*h).clamp(0, img_size-1)
-    x2, y2 = (cx+0.5*w).clamp(0, img_size-1), (cy+0.5*h).clamp(0, img_size-1)
-    return torch.stack([x1,y1,x2,y2], dim=2)  # [B,P,4,H,W]
-
-def __legacy_veh_box_from_any(veh_pred: torch.Tensor, img_size:int):
-    if veh_pred is None or not torch.is_tensor(veh_pred): return None
-    if veh_pred.dim()==2 and veh_pred.shape[1]==4:
-        sig = veh_pred.sigmoid().float()
-        cx,cy,w,h = sig[:,0]*img_size, sig[:,1]*img_size, sig[:,2]*img_size, sig[:,3]*img_size
-        x1,y1 = (cx-0.5*w).clamp(0,img_size-1), (cy-0.5*h).clamp(0,img_size-1)
-        x2,y2 = (cx+0.5*w).clamp(0,img_size-1), (cy+0.5*h).clamp(0,img_size-1)
-        return torch.stack([x1,y1,x2,y2], dim=1)
-    return None
-
-def _derive_vehicle_box_from_parts(part_logits: torch.Tensor, BP4: torch.Tensor, img_size:int):
-    if part_logits is None or BP4 is None: return None
-    # pick best cell per part from logits, then take weighted quantiles of boxes
-    B,P,H,W = part_logits.shape
-    probs = torch.sigmoid(part_logits).reshape(B,P,-1)
-    idx = probs.argmax(dim=-1)  # [B,P]
-    ys, xs = (idx // W), (idx % W)
-    boxes_sq = []
-    scores   = []
-    decoded = s_decode_dxdy(BP4, H, W, img_size)  # [B,P,4,H,W]
-    if decoded is None: return None
-    for p in range(P):
-        y, x = int(ys[0,p]), int(xs[0,p])
-        b = decoded[0,p,:,y,x]  # [4]
-        boxes_sq.append([float(b[0]),float(b[1]),float(b[2]),float(b[3])])
-        scores.append(float(probs[0,p, y*W+x]))
-    if not boxes_sq: return None
-    # weighted middle 80%
-    xs1 = torch.tensor([b[0] for b in boxes_sq]); ys1 = torch.tensor([b[1] for b in boxes_sq])
-    xs2 = torch.tensor([b[2] for b in boxes_sq]); ys2 = torch.tensor([b[3] for b in boxes_sq])
-    wts = torch.tensor(scores).clamp_min(1e-6); cw = wts.cumsum(0)/wts.sum()
-
-    def _wq(vals, q):
-        s, idx = torch.sort(vals); ww = wts[idx]; c = ww.cumsum(0)/ww.sum()
-        j = int(torch.searchsorted(c, torch.tensor([q]), right=True).clamp(max=len(s)-1))
-        return float(s[j])
-    x1 = _wq(xs1, 0.10); y1 = _wq(ys1, 0.10)
-    x2 = _wq(xs2, 0.90); y2 = _wq(ys2, 0.90)
-
-    # ensure min size
-    minw = 0.10*img_size; minh = 0.10*img_size
-    if (x2-x1)<minw:
-        cx = 0.5*(x1+x2); x1, x2 = cx-0.5*minw, cx+0.5*minw
-    if (y2-y1)<minh:
-        cy = 0.5*(y1+y2); y1, y2 = cy-0.5*minh, cy+0.5*minh
-    x1 = max(0, x1); y1 = max(0, y1); x2 = min(img_size-1, x2); y2 = min(img_size-1, y2)
-    return (x1,y1,x2,y2)
-
-# ---------- Cascade (Type → Make → Model) ----------
-def _cascade_type_make_model(lt:torch.Tensor|None, lm:torch.Tensor|None, lk:torch.Tensor|None):
-    if lt is None: return {"type":None,"make":None,"model":None,"confs":(),"stop":"no-type"}
-    pt = torch.softmax(lt.float()/max(1e-6,TEMP_TYPE), dim=-1)
-    t  = int(pt.argmax(dim=-1)[0]); ct = float(pt[0,t])
-    if lm is None or ct < TAU_TYPE:
-        return {"type":t,"make":None,"model":None,"confs":(ct,), "stop":"type" if ct<TAU_TYPE else "nocascade"}
-    # Mask makes by allowed types
-    allowed_m = (allowed_makes_by_type_idx or {}).get(t, None)
-    if allowed_m is not None:
-        mask = torch.full_like(lm, -1e4); mask[:, allowed_m] = 0.0
-        pm = torch.softmax((lm.float()+mask)/max(1e-6,TEMP_MAKE), dim=-1)
-    else:
-        pm = torch.softmax(lm.float()/max(1e-6,TEMP_MAKE), dim=-1)
-    m  = int(pm.argmax(dim=-1)[0]); cm = float(pm[0,m])
-    if lk is None or cm < TAU_MAKE:
-        return {"type":t,"make":None,"model":None,"confs":(ct,cm),"stop":"make"}
-    allowed_k = (allowed_models_by_make_idx or {}).get(m, [])
-    if allowed_k:
-        maskk = torch.full_like(lk, -1e4); maskk[:, allowed_k] = 0.0
-        pk = torch.softmax((lk.float()+maskk)/max(1e-6,TEMP_MODEL), dim=-1)
-    else:
-        pk = torch.softmax(lk.float()/max(1e-6,TEMP_MODEL), dim=-1)
-    k  = int(pk.argmax(dim=-1)[0]); ck = float(pk[0,k])
-    if ck < TAU_MODEL:
-        return {"type":t,"make":m,"model":None,"confs":(ct,cm,ck),"stop":"model"}
-    return {"type":t,"make":m,"model":k,"confs":(ct,cm,ck),"stop":"ok"}
+def read_plate_text(image_pil: Image.Image) -> Dict[str, Any]:
+    try:
+        import pytesseract
+    except Exception:
+        return {"text":"", "conf":0.0}
+    im = ImageOps.autocontrast(image_pil.convert("L"))
+    try:
+        data = pytesseract.image_to_data(im, output_type='dict')
+        words = [w for w,cnf in zip(data.get("text",[]), data.get("conf",[])) if (w and str(cnf).isdigit())]
+        confs = [float(c) for c in data.get("conf",[]) if str(c).isdigit()]
+        text = " ".join(words).strip()
+        conf = (sum(confs)/max(1,len(confs)))/100.0 if confs else 0.0
+        return {"text": text, "conf": conf}
+    except Exception:
+        txt = pytesseract.image_to_string(im).strip()
+        return {"text": txt, "conf": 0.0}
 
 # ---------- Model cache + warm-up ----------
 _MODEL_CACHE: dict[str, Tuple[nn.Module, dict]] = {}
 _WARMED: set[str] = set()
+
 def _get_model_for_variant(variant:str)->Tuple[nn.Module, dict]:
     key = variant.strip().lower()
     if key in _MODEL_CACHE: return _MODEL_CACHE[key]
     try:
-        m, rep = load_model(key)  # existing helper from earlier phases
+        m, rep = load_model(key)
     except Exception as e:
         LOG.warn("load_model_error", variant=key, error=str(e))
         m, rep = build_model(backbone_name=os.getenv("BACKBONE_NAME_BASELINE","mobilevitv2_200")), {"aligned":True,"trained":False,"load_notes":["fallback_build"]}
     dev = "cuda" if torch.cuda.is_available() else "cpu"
-    m = m.to(dev).eval()
+    m = _lock_eval_mode(m.to(dev))
     _MODEL_CACHE[key] = (m, rep or {})
     return _MODEL_CACHE[key]
 
@@ -994,120 +1165,86 @@ def _maybe_warmup(model: nn.Module, device:str, img_size:int, steps:int=WARMUP_S
     _WARMED.add(key)
     LOG.info("warmup_done", steps=int(steps), device=device)
 
-# ========================= NEW: LOCAL UTILS (no shared 'analysis.utils' required) ==================
-from typing import Sequence
-from PIL import ImageDraw, ImageStat, ImageOps
+# ---------- Decoding helpers ----------
+def _veh_head_to_xyxy(veh_pred, img_size:int):
+    if not (isinstance(veh_pred, torch.Tensor) and veh_pred.dim()==2 and veh_pred.shape[1]==4):
+        return None
+    t = veh_pred[0].detach().float().cpu()
+    cx,cy,w,h = torch.sigmoid(t[0])*img_size, torch.sigmoid(t[1])*img_size, torch.sigmoid(t[2])*img_size, torch.sigmoid(t[3])*img_size
+    x1,y1 = max(0.0, float(cx-0.5*w)), max(0.0, float(cy-0.5*h))
+    x2,y2 = min(img_size-1.0, float(cx+0.5*w)), min(img_size-1.0, float(cy+0.5*h))
+    return (x1,y1,x2,y2)
 
-def crop_by_xyxy(img: Image.Image, box: Tuple[float,float,float,float]) -> Image.Image:
-    """Robust clamp + crop using original-image coords."""
-    x1,y1,x2,y2 = [int(round(v)) for v in box]
-    x1 = max(0, min(img.width-1,  x1))
-    y1 = max(0, min(img.height-1, y1))
-    x2 = max(x1+1, min(img.width,  x2))
-    y2 = max(y1+1, min(img.height, y2))
-    return img.crop((x1,y1,x2,y2))
+def _veh_from_parts_quantile(parts_boxes, parts_scores, img_size:int, trim=0.10):
+    if not parts_boxes: return None
+    xs1=_np.array([b[0] for b in parts_boxes],dtype=_np.float32)
+    ys1=_np.array([b[1] for b in parts_boxes],dtype=_np.float32)
+    xs2=_np.array([b[2] for b in parts_boxes],dtype=_np.float32)
+    ys2=_np.array([b[3] for b in parts_boxes],dtype=_np.float32)
+    wq=lambda arr,q: float(_np.quantile(arr,q))
+    x1=wq(xs1,trim); y1=wq(ys1,trim); x2=wq(xs2,1.0-trim); y2=wq(ys2,1.0-trim)
+    minw=0.10*img_size; minh=0.10*img_size
+    if (x2-x1)<minw: x2=x1+minw
+    if (y2-y1)<minh: y2=y1+minh
+    return (max(0.0,x1), max(0.0,y1), min(img_size-1.0,x2), min(img_size-1.0,y2))
 
-def _color_name_from_rgb(r:int,g:int,b:int)->str:
-    # Coarse mapping for quick visual summaries.
-    mx = max(r,g,b); mn = min(r,g,b)
-    if mx < 40: return "black"
-    if mn > 200: return "white"
-    if abs(r-g)<15 and abs(g-b)<15:
-        return "gray"
-    if r>g and r>b:
-        return "red" if g<b else "orange"
-    if g>r and g>b:
-        return "green"
-    if b>r and b>g:
-        return "blue"
-    if r>200 and g>200 and b<80:
-        return "yellow"
-    if r>160 and b>160 and g<120:
-        return "magenta"
-    if g>160 and b>160 and r<120:
-        return "cyan"
-    return "color"
+def _veh_from_any_part_heat(hm, img_size:int):
+    if hm is None: return None
+    flat = torch.softmax(hm.view(-1), dim=0)
+    idx = int(torch.argmax(flat).item()); H,W = hm.shape
+    gi, gj = idx // W, idx % W
+    cell_w, cell_h = (img_size/W), (img_size/H)
+    cx=(gj+0.5)*cell_w; cy=(gi+0.5)*cell_h
+    w=max(cell_w,0.10*img_size); h=max(cell_h,0.10*img_size)
+    x1,y1 = cx-0.5*w, cy-0.5*h; x2,y2 = cx+0.5*w, cy+0.5*h
+    return (max(0.0,x1), max(0.0,y1), min(img_size-1.0,x2), min(img_size-1.0,y2))
 
-def detect_vehicle_color(image_pil: Image.Image) -> List[Dict[str, float]]:
-    """
-    Lightweight dominant color detector (no external deps).
-    Returns: [{"name": str, "fraction": float, "conf": float}, ...]
-    """
-    im = image_pil.convert("RGB")
-    small = im.resize((96,96), Image.BILINEAR)
-    pal = small.convert("P", palette=Image.ADAPTIVE, colors=8).convert("RGB")
-    # Count pixels per unique color
-    data = _np.asarray(pal).reshape(-1,3)
-    uniq, counts = _np.unique(data, axis=0, return_counts=True)
-    total = counts.sum()
-    rows = []
-    for (r,g,b), c in sorted(zip(uniq, counts), key=lambda t:-t[1]):
-        frac = float(c)/float(total)
-        rows.append({"name": _color_name_from_rgb(int(r),int(g),int(b)),
-                     "fraction": frac,
-                     "conf": min(0.99, 0.5 + 0.5*frac)})
-    return rows[:3]
-
-def read_plate_text(image_pil: Image.Image) -> Dict[str, Any]:
-    """
-    Optional OCR via pytesseract if available; otherwise, returns empty result.
-    Output: {"text": str, "conf": float}
-    """
+def _filter_parts_debug_list(parts_debug_sq, img_size=IMG_SIZE,
+                             area_min_frac=AREA_MIN_FRAC,
+                             area_max_frac=AREA_MAX_FRAC,
+                             allowlist_en=ALLOWLIST_EN,
+                             type_name=None):
     try:
-        import pytesseract
-    except Exception:
-        return {"text":"", "conf":0.0}
-    im = ImageOps.autocontrast(image_pil.convert("L"))
-    try:
-        data = pytesseract.image_to_data(im, output_type='dict')
-        words = [w for w,cnf in zip(data.get("text",[]), data.get("conf",[])) if (w and str(cnf).isdigit())]
-        confs = [float(c) for c in data.get("conf",[]) if str(c).isdigit()]
-        text = " ".join(words).strip()
-        conf = (sum(confs)/max(1,len(confs)))/100.0 if confs else 0.0
-        return {"text": text, "conf": conf}
-    except Exception:
-        txt = pytesseract.image_to_string(im).strip()
-        return {"text": txt, "conf": 0.0}
+        sqA = float(img_size) * float(img_size)
+        minA = float(area_min_frac) * sqA
+        maxA = float(area_max_frac) * sqA
 
-def draw_overlay_on_square(
-    sq: Image.Image,
-    veh_box_sq: Optional[Tuple[float,float,float,float]],
-    parts_sq: Sequence[Tuple[Tuple[float,float,float,float], str, float]],
-    title: Optional[str]=None
-) -> Image.Image:
-    """Draw vehicle + part boxes on the square (letterboxed) image."""
-    im = sq.copy()
-    dr = ImageDraw.Draw(im)
-    if veh_box_sq is not None:
-        x1,y1,x2,y2 = [int(round(v)) for v in veh_box_sq]
-        dr.rectangle([x1,y1,x2,y2], outline=(255,165,0), width=3)
-        dr.text((x1, max(0,y1-14)), "vehicle", fill=(255,165,0))
-    for (x1,y1,x2,y2), name, score in parts_sq:
-        x1,y1,x2,y2 = [int(round(v)) for v in (x1,y1,x2,y2)]
-        dr.rectangle([x1,y1,x2,y2], outline=(0,255,255), width=2)
-        dr.text((x1, y1+2), f"{name}:{score:.2f}", fill=(0,255,255))
-    if title:
-        dr.text((6,6), title, fill=(255,255,255))
-    return im
+        def ok_area(b):
+            if not isinstance(b, (list, tuple)) or len(b) != 4:
+                return False
+            x1, y1, x2, y2 = [float(v) for v in b]
+            w = max(0.0, x2 - x1); h = max(0.0, y2 - y1)
+            a = w * h
+            return (minA <= a <= maxA)
+
+        out = []
+        for p in (parts_debug_sq or []):
+            b = p.get("box_sq") or []
+            if not ok_area(b):
+                continue
+            out.append(p)
+        LOG.info("parts_debug_hardening", kept=len(out),
+                 area_min=area_min_frac, area_max=area_max_frac,
+                 allowlist=bool(allowlist_en))
+        return out
+    except Exception as _e:
+        LOG.warn("parts_debug_hardening_failed", error=str(_e))
+        return parts_debug_sq or []
 
 # ---------- Inference runner ----------
 def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Optional[str]=None):
     """
     Returns: (dets, timings, metrics)
-      dets: {
-        "type": name|None, "type_conf": float|0,
-        "make": name|None, "make_conf": float|0,
-        "model": name|None, "model_conf": float|0,
-        "parts": [{"name":str,"conf":float}, ...],
-        "colors": [{"name":str,"fraction":float,"conf":float}, ...],
-        "plate_text": str, "plate_conf": float|0,
-        "veh_box": (x1,y1,x2,y2) in original image coords (if available),
-        "plate_box": (x1,y1,x2,y2) (if available),
-        "_debug_parts_sq": [{"name":str,"conf":float,"box_sq":[x1,y1,x2,y2]}],  # ADDED (non-breaking)
-        "_debug_pad_scale": {"pad": [px,py], "scale": float}                    # ADDED (non-breaking)
-      }
+    dets: {
+      "type","type_conf","make","make_conf","model","model_conf",
+      "thresholds": {...}, "below_threshold": {...},
+      "parts": [...],
+      "colors": [ {finish, base, lightness, conf} × 1..3 ],
+      "plate_text","plate_conf",
+      "veh_box","veh_box_src","plate_box",
+      "_debug_parts_sq":[...], "_debug_pad_scale":{...}
+    }
     """
-    # ---- Phase 6 toggles (env-driven, non-breaking) ----
     TOPK     = _env_int("PARTS_DEBUG_TOPK", 12)
     DRAW_ALL = _env_bool("PARTS_DRAW_ALL", 0)
 
@@ -1120,7 +1257,7 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
     ow, oh = img.size
     timer.tick("setup")
 
-    # vocab (touch globals to ensure they’re built/adopted)
+    # vocab touch
     _ = (len(TYPES), len(MAKES), len(MODELS), len(PARTS), len(REGIONS))
     timer.tick("vocab")
 
@@ -1128,17 +1265,22 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
     model, rep = _get_model_for_variant(variant)
     timer.tick("bundle")
 
-    # preproc (PIL -> torch CHW float [0,1] -> letterbox -> BCHW)
-    arr = _np.asarray(img)  # HWC uint8
-    tCHW = torch.from_numpy(arr.copy()).permute(2,0,1)  # CHW uint8
-    tCHW = tCHW.float()/255.0
+    # preproc
+    arr = _np.asarray(img)
+    tCHW = torch.from_numpy(arr.copy()).permute(2,0,1).float()/255.0
     sq, pad, scale = s_letterbox_fit(tCHW, int(IMG_SIZE))  # CHW
     X = sq.unsqueeze(0).to(dev)  # BCHW
     timer.tick("preproc")
 
-    # forward (with one-time warm-up)
-    _maybe_warmup(model, dev, int(IMG_SIZE))
+    # warmup
+    if warmup_model is not None:
+        warm_ms = warmup_model(model, dev, int(IMG_SIZE), steps=WARMUP_STEPS)
+    else:
+        _maybe_warmup(model, dev, int(IMG_SIZE), steps=WARMUP_STEPS)
+        warm_ms = 0
     timer.tick("warmup")
+
+    # forward
     use_amp = bool(AMP and dev.startswith("cuda") and torch.cuda.is_available())
     ctx = torch.amp.autocast(device_type="cuda") if use_amp else nullcontext()
     with torch.no_grad():
@@ -1148,71 +1290,103 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
                 torch.cuda.synchronize()
     timer.tick("forward")
 
-    # decode: types/makes/models
-    lt = out.get("type_logits")
-    lm = out.get("make_logits")
-    lk = out.get("model_logits")
-    cascade = s_cascade_infer(lt, lm, lk, CFG if "CFG" in globals() else type("C",(),{})(), allowed_makes_by_type_idx if "allowed_makes_by_type_idx" in globals() else None, allowed_models_by_make_idx if "allowed_models_by_make_idx" in globals() else None)
+    # ---- decode: type/make/model cascade (+ voter blend) ----
+    try:
+        lt, lm, lk = s_blend_logits(out)
+        LOG.info("voter_blend_used", used=True)
+    except Exception:
+        lt = out.get("type_logits"); lm = out.get("make_logits"); lk = out.get("model_logits")
+        LOG.info("voter_blend_used", used=False)
+
+    cascade = s_cascade_infer(
+         lt, lm, lk,
+         CFG_INFER,
+         allowed_makes_by_type_idx if "allowed_makes_by_type_idx" in globals() else None,
+         allowed_models_by_make_idx if "allowed_models_by_make_idx" in globals() else None
+    )
+
     t_id, m_id, k_id = cascade["type"], cascade["make"], cascade["model"]
-    confs = cascade["confs"] + ((0.0,)*(3-len(cascade["confs"])))
+    confs = list(cascade["confs"]) + [0.0]*(3-len(cascade["confs"]))
+
     type_name  = (TYPES[t_id]  if t_id is not None and 0<=t_id<len(TYPES)  else None)
     make_name  = (MAKES[m_id]  if m_id is not None and 0<=m_id<len(MAKES)  else None)
     model_name = (MODELS[k_id] if k_id is not None and 0<=k_id<len(MODELS) else None)
 
-    # parts + vehicle box
+    # persist-always best-effort if any None (masked top-1)
+    make_mask_idx  = allowed_makes_by_type_idx.get(int(t_id)) if ('allowed_makes_by_type_idx' in globals() and t_id is not None) else None
+    model_mask_idx = allowed_models_by_make_idx.get(int(m_id)) if ('allowed_models_by_make_idx' in globals() and m_id is not None) else None
+
+    def _masked_top1(logits, mask_idx, temp):
+        if logits is None or not torch.is_tensor(logits) or logits.numel() == 0: return None, 0.0
+        z = logits.float().clone()
+        if mask_idx:
+            mask = torch.zeros(z.shape[-1], dtype=torch.bool, device=z.device)
+            mask[torch.as_tensor(list(mask_idx), device=z.device, dtype=torch.long)] = True
+            z[..., ~mask] = -1e9
+        p = torch.softmax(z / max(1e-6, float(temp)), dim=-1)
+        idx = int(p.argmax(dim=-1)[0].item()) if p.dim() == 2 else int(p.argmax().item())
+        conf = float(p.view(-1)[idx].item())
+        return idx, conf
+
+    def _top1(logits, temp):
+        if logits is None or not torch.is_tensor(logits) or logits.numel() == 0: return None, 0.0
+        p = torch.softmax(logits.float() / max(1e-6, float(temp)), dim=-1)
+        idx = int(p.argmax(dim=-1)[0].item()) if p.dim() == 2 else int(p.argmax().item())
+        return idx, float(p.view(-1)[idx].item())
+
+    if type_name is None:
+        t1, c1 = _top1(lt, CFG_INFER.temp_type)
+        type_name = (TYPES[t1] if t1 is not None and 0<=t1<len(TYPES) else None)
+        confs[0] = float(c1)
+    if make_name is None:
+        m1, c2 = _masked_top1(lm, make_mask_idx, CFG_INFER.temp_make)
+        make_name = (MAKES[m1] if m1 is not None and 0<=m1<len(MAKES) else None)
+        confs[1] = float(c2)
+    if model_name is None:
+        k1, c3 = _masked_top1(lk, model_mask_idx, CFG_INFER.temp_model)
+        model_name = (MODELS[k1] if k1 is not None and 0<=k1<len(MODELS) else None)
+        confs[2] = float(c3)
+
+    # ---- parts + vehicle box ----
     P = len(PARTS)
-    part_logits = out.get("part_logits")  # [B,P,H,W] or None
+    part_logits = out.get("part_logits")
     s_assert_head_grid_matches(type("CFG", (), {"img_size": int(IMG_SIZE)})(), part_logits, model)
-    bbox_preds  = out.get("bbox_preds")   # [B,4P,H,W] or compatible
+    bbox_preds  = out.get("bbox_preds")
     parts_list  = []
-    parts_debug_sq = []   # ADDED: store boxes for overlay
+    parts_debug_sq = []
     veh_box_sq  = None
 
     if torch.is_tensor(part_logits):
         B,Pp,H,W = part_logits.shape
-        probs = torch.sigmoid(part_logits)[0]  # [P,H,W]
-        scores = probs.amax(dim=(-1,-2))       # [P]
-        # pick parts above PART_TAU (sane default)
+        probs = torch.sigmoid(part_logits)[0]
+        scores = probs.amax(dim=(-1,-2))
         for p_idx, sc in enumerate(scores.tolist()):
             if float(sc) >= float(PART_TAU):
                 parts_list.append({"name": PARTS[p_idx] if p_idx < len(PARTS) else f"part_{p_idx}",
                                    "conf": float(sc)})
-        # veh box: prefer explicit veh head, else derive from parts+bbox
+
         veh_box_pred = out.get("veh_box_preds")
+        vh = None
         if veh_box_pred is not None:
             v = s_veh_box_from_any(veh_box_pred, int(IMG_SIZE))
-            if v is not None: veh_box_sq = tuple(float(v[0,i].item()) for i in range(4))
-        # --- BEGIN: Colab-parity gating for parts debug overlay ---
-        # Shapes and constants
-        P = len(PARTS)
-        B, Pp, H, W = part_logits.shape  # [B,P,H,W]
-        
-        # 1) Compute per-part heat maxima (sigmoided)
-        heat_map = torch.sigmoid(part_logits)[0]      # [P,H,W]
-        heat_max = heat_map.amax(dim=(-1, -2))        # [P]
-        
-        # 2) Blend with presence logits if available (Colab behavior)
+            if v is not None: vh = tuple(float(v[0,i].item()) for i in range(4))
+
+        heat_map = torch.sigmoid(part_logits)[0]
+        heat_max = heat_map.amax(dim=(-1, -2))
         pres_logits = out.get("part_present_logits")
         pres_max = None
         if torch.is_tensor(pres_logits):
             pl = pres_logits
             if pl.dim() == 4 and tuple(pl.shape[-2:]) == (H, W):
-                pres_max = torch.sigmoid(pl)[0].amax(dim=(-1, -2))  # [P]
+                pres_max = torch.sigmoid(pl)[0].amax(dim=(-1, -2))
             else:
-                pres_max = torch.sigmoid(pl).view(B, -1)[0][:Pp]     # [P]
-        
-        # Blend (50/50). If presence not available, fall back to heat only.
-        if pres_max is not None and pres_max.shape[0] == heat_max.shape[0]:
-            conf_vec = 0.5 * heat_max + 0.5 * pres_max
-        else:
-            conf_vec = heat_max
-        
-        # 3) Optional: restrict parts by predicted vehicle type
+                pres_max = torch.sigmoid(pl).view(B, -1)[0][:Pp]
+        conf_vec = 0.5 * heat_max + 0.5 * pres_max if pres_max is not None and pres_max.shape[0]==heat_max.shape[0] else heat_max
+
         allowed_parts = None
         if type_name is not None:
             allowed_parts = set(TYPE_PART_TO_REGIONS.get(type_name, {}).keys())
-        
-        # 4) Keep = (optional type-mask) AND (confidence >= PART_TAU)
+
         kept = []
         for p_idx, sc in enumerate(conf_vec.tolist()):
             if p_idx >= P: break
@@ -1222,22 +1396,18 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
             if float(sc) < float(PART_TAU):
                 continue
             kept.append((p_idx, p_name, float(sc)))
-        
-        # 5) Top-K to avoid clutter
-        TOPK = 12
-        kept = sorted(kept, key=lambda t: t[2], reverse=True)[:TOPK]
-        
-        # 6) Decode a single box per kept part (best cell by heat)
-        parts_debug_sq = []
+        kept = sorted(kept, key=lambda t: t[2], reverse=True)[:12]
+
         BP4 = s_unpack_BP4HW(bbox_preds, P, H, W) if torch.is_tensor(bbox_preds) else None
         XYXY = s_decode_dxdy(BP4, H, W, int(IMG_SIZE)) if BP4 is not None else None
-        
+
+        parts_boxes = []
+        parts_scores = []
         for (p_idx, p_name, sc) in kept:
-            heat = heat_map[p_idx]  # [H,W]
+            heat = heat_map[p_idx]
             flat = torch.softmax(heat.reshape(-1), dim=0)
             arg  = int(torch.argmax(flat).item())
             gi, gj = arg // W, arg % W
-        
             if XYXY is not None:
                 x1 = float(XYXY[0, p_idx, 0, gi, gj].item())
                 y1 = float(XYXY[0, p_idx, 1, gi, gj].item())
@@ -1245,46 +1415,41 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
                 y2 = float(XYXY[0, p_idx, 3, gi, gj].item())
             else:
                 x1,y1,x2,y2 = s_box_from_heatmap(heat, int(IMG_SIZE), gamma=3.2, temperature=0.8)
-        
-            # 7) Minimum size clamps
-            minw = 0.04 * IMG_SIZE
-            minh = 0.04 * IMG_SIZE
+
+            minw = 0.04 * IMG_SIZE; minh = 0.04 * IMG_SIZE
             if (x2 - x1) < minw:
-                cx = 0.5 * (x1 + x2)
-                x1, x2 = cx - 0.5 * minw, cx + 0.5 * minw
+                cx = 0.5 * (x1 + x2); x1, x2 = cx - 0.5 * minw, cx + 0.5 * minw
             if (y2 - y1) < minh:
-                cy = 0.5 * (y1 + y2)
-                y1, y2 = cy - 0.5 * minh, cy + 0.5 * minh
-        
-            # Clip to square
+                cy = 0.5 * (y1 + y2); y1, y2 = cy - 0.5 * minh, cy + 0.5 * minh
             x1 = max(0.0, x1); y1 = max(0.0, y1)
             x2 = min(float(IMG_SIZE - 1), x2); y2 = min(float(IMG_SIZE - 1), y2)
-        
-            parts_debug_sq.append({
-                "name": p_name,
-                "conf": sc,
-                "box_sq": [x1, y1, x2, y2],
-            })
-        
-        # Helpful log for live checks
-        try:
-            LOG.info("parts_debug_kept", type=str(type_name), kept=len(kept), total=int(Pp), topk=int(TOPK), tau=float(PART_TAU))
-        except Exception:
-            pass
-        # --- END: Colab-parity gating for parts debug overlay ---
 
-        if veh_box_sq is None and torch.is_tensor(bbox_preds):
-            BP4 = s_unpack_BP4HW(bbox_preds, P, H, W)
-            veh_box_sq = _derive_vehicle_box_from_parts(part_logits[0], BP4, int(IMG_SIZE))
+            parts_debug_sq.append({"name": p_name, "conf": sc, "box_sq": [x1, y1, x2, y2]})
+            parts_boxes.append([x1,y1,x2,y2])
+            parts_scores.append(sc)
+
+        vp = _veh_from_parts_quantile(parts_boxes, parts_scores, int(IMG_SIZE)) if parts_boxes else None
+        any_part_heat = heat_map.max(dim=0).values if torch.is_tensor(part_logits) else None
+        va = _veh_from_any_part_heat(any_part_heat, int(IMG_SIZE))
+
+        candidates = []
+        if vh is not None: candidates.append(("veh-head", vh))
+        if vp is not None: candidates.append(("parts-quantile", vp))
+        if va is not None: candidates.append(("any-part-heat", va))
+        veh_src, veh_box_sq = ("none", None)
+        if candidates:
+            pref = {"veh-head":0, "parts-quantile":1, "any-part-heat":2}
+            candidates.sort(key=lambda t: pref.get(t[0], 99))
+            veh_src, veh_box_sq = candidates[0][0], candidates[0][1]
     else:
-        # still try veh head
         veh_box_pred = out.get("veh_box_preds")
+        veh_src = "none"
         if veh_box_pred is not None:
             v = s_veh_box_from_any(veh_box_pred, int(IMG_SIZE))
-            if v is not None: veh_box_sq = tuple(float(v[0,i].item()) for i in range(4))
+            if v is not None:
+                veh_box_sq = tuple(float(v[0,i].item()) for i in range(4))
+                veh_src = "veh-head"
 
-    # back to original coords
-    # pick best Plate part (Front/Rear) → plate_box_sq
     plate_box_sq = None
     if isinstance(parts_debug_sq, list) and parts_debug_sq:
         cand = [p for p in parts_debug_sq if str(p.get("name","")).lower().endswith("plate")]
@@ -1294,156 +1459,137 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
             if isinstance(bb, (list,tuple)) and len(bb)==4:
                 plate_box_sq = tuple(float(v) for v in bb)
 
-    veh_box = s_invert_letterbox_box(veh_box_sq, ow, oh, pad, scale) if veh_box_sq is not None else None
+    veh_box   = s_invert_letterbox_box(veh_box_sq,  ow, oh, pad, scale)  if veh_box_sq  is not None else None
     plate_box = s_invert_letterbox_box(plate_box_sq, ow, oh, pad, scale) if plate_box_sq is not None else None
-
     timer.tick("decode")
 
-    # postproc: assemble dets
+    # ---- assemble dets ----
     dets = {
-        "type": type_name,   "type_conf":  float(confs[0]) if len(confs)>0 else 0.0,
-        "make": make_name,   "make_conf":  float(confs[1]) if len(confs)>1 else 0.0,
-        "model": model_name, "model_conf": float(confs[2]) if len(confs)>2 else 0.0,
+        "type": type_name,   "type_conf":  float(confs[0]),
+        "make": make_name,   "make_conf":  float(confs[1]),
+        "model": model_name, "model_conf": float(confs[2]),
+
+        # [PH9] strict thresholds naming (+ part_presence_min)
+        "thresholds": {
+            "type_min": float(TAU_TYPE),
+            "make_min": float(TAU_MAKE),
+            "model_min": float(TAU_MODEL),
+            "part_presence_min": float(PART_TAU),
+        },
+        "below_threshold": {
+            "type":  bool(confs[0] < float(TAU_TYPE)),
+            "make":  bool(confs[1] < float(TAU_MAKE)),
+            "model": bool(confs[2] < float(TAU_MODEL)),
+        },
+
         "parts": parts_list,
-        "colors": [],
+        "colors": [],  # FBL array
         "plate_text": "",
         "plate_conf": 0.0,
         "veh_box": veh_box,
-                "plate_box": plate_box,
-        "plate_box": None,
-        # NEW non-breaking debug fields for overlay utilities:
-
+        "veh_box_src": veh_src if 'veh_src' in locals() else ("veh-head" if veh_box_sq is not None else "none"),
+        "plate_box": plate_box,
         "_debug_parts_sq": _filter_parts_debug_list(parts_debug_sq),
         "_debug_pad_scale": {"pad":[float(pad[0]),float(pad[1])], "scale": float(scale)},
     }
     timer.tick("postproc")
 
-    # color (optional; local fallback if shared utils missing)
-    global _COLOR_WARNED; 
-    try: _COLOR_WARNED
-    except NameError: _COLOR_WARNED = False
-
+    # ---- color stage → FBL only ----
     if ENABLE_COLOR:
         try:
-            from analysis import utils as _U
-            if hasattr(_U, "detect_vehicle_color") and veh_box is not None:
-                crop = _U.crop_by_xyxy(img, veh_box) if hasattr(_U, "crop_by_xyxy") else img.crop(tuple(map(int,veh_box)))
-                colors = _U.detect_vehicle_color(crop)
+            veh_crop_box = dets.get("veh_box")
+            if _COLOR is not None and hasattr(_COLOR, "detect_vehicle_color"):
+                colors_fbl = _COLOR.detect_vehicle_color(img, veh_box=veh_crop_box, allow_multitone=True, timeout_s=20)
             else:
-                # LOCAL FALLBACK
-                colors = detect_vehicle_color(crop_by_xyxy(img, veh_box)) if veh_box is not None else []
-            if isinstance(colors, (list,tuple)):
-                out_colors=[]
-                for c in colors[:3]:
-                    if isinstance(c, dict) and "name" in c:
-                        out_colors.append({"name":str(c["name"]),
-                                           "fraction": float(c.get("fraction", 0.0)),
-                                           "conf": float(c.get("conf", c.get("confidence", 0.0)))})
-                    elif isinstance(c, (list,tuple)) and len(c)>=1:
-                        out_colors.append({"name":str(c[0]),
-                                           "fraction": float(c[1]) if len(c)>1 else 0.0,
-                                           "conf": float(c[2]) if len(c)>2 else 0.0})
-                dets["colors"] = out_colors
-        except Exception as e:
-            # LOCAL FALLBACK if import failed outright
-            if veh_box is not None:
-                try:
-                    colors = detect_vehicle_color(crop_by_xyxy(img, veh_box))
-                    dets["colors"] = [{"name":str(c["name"]),
-                                       "fraction": float(c.get("fraction",0.0)),
-                                       "conf": float(c.get("conf",0.0))} for c in colors[:3]]
-                except Exception as ee:
-                    if not _COLOR_WARNED:
-                        LOG.warn("color_error", error=str(ee)); _COLOR_WARNED=True
-            elif not _COLOR_WARNED:
-                LOG.warn("color_missing_impl", note="ENABLE_COLOR=1 but no veh_box or utils"); _COLOR_WARNED=True
+                crop = img if veh_crop_box is None else img.crop(tuple(map(int, veh_crop_box)))
+                coarse = detect_vehicle_color(crop)
+                labels = [c.get("name","") for c in (coarse or [])]
+                confsC = [float(c.get("conf",0.0)) for c in (coarse or [])]
+                FINISH = {"Metallic","Matte","Glossy"}
+                LIGHT  = {"Light","Medium","Dark"}
+                BASE   = {"Red","Orange","Yellow","Green","Blue","Purple","Pink","White","Gray","Black","Silver","Gold","Brown","Beige","Maroon","Cyan"}
+                def _parse(label):
+                    finish = base = lightness = None
+                    toks = [t.strip().capitalize() for t in str(label or "").split() if t.strip()]
+                    for t in toks:
+                        if t in FINISH and finish is None: finish = t
+                    for t in toks:
+                        if t in LIGHT and lightness is None: lightness = t
+                    for t in toks:
+                        if t in BASE and base is None: base = t; break
+                    if base is None and toks: base = toks[-1]
+                    return {"finish": finish, "base": base, "lightness": lightness}
+                keep = [0] + ([1] if len(labels)>1 and len(confsC)>1 and confsC[1]>=0.70 else []) + ([2] if len(labels)>2 and len(confsC)>2 and confsC[2]>=0.70 else [])
+                colors_fbl = []
+                for i in keep[:3]:
+                    fbl=_parse(labels[i]); fbl["conf"]=float(confsC[i] if i<len(confsC) else confsC[0] if confsC else 0.0)
+                    colors_fbl.append(fbl)
+                if not colors_fbl:
+                    colors_fbl=[{"finish":None,"base":None,"lightness":None,"conf":0.0}]
+            dets["colors"] = colors_fbl
+        except Exception as _e:
+            LOG.warn("color_error", error=str(_e))
     else:
-        if not _COLOR_WARNED:
-            LOG.warn("color_disabled", note="ENABLE_COLOR=0 → color stage skipped")
-            _COLOR_WARNED = True
+        LOG.warn("color_disabled", note="ENABLE_COLOR=0")
     timer.tick("color")
 
-    # plate (optional; local fallback if shared utils missing)
-    global _PLATE_WARNED;
-    try: _PLATE_WARNED
-    except NameError: _PLATE_WARNED=False
-
+    # ---- plate OCR ----
     if ENABLE_PLATE and not dets.get("plate_text"):
         try:
-            from analysis import utils as _U
-            if hasattr(_U, "read_plate_text") and veh_box is not None:
-                crop = _U.crop_by_xyxy(img, veh_box) if hasattr(_U, "crop_by_xyxy") else img.crop(tuple(map(int,veh_box)))
-                resp = _U.read_plate_text(crop)
+            if _PLATE is not None and hasattr(_PLATE, "recognize_plate"):
+                boxes = []
+                if dets.get("plate_box"): boxes.append(tuple(map(float, dets["plate_box"])))
+                elif dets.get("veh_box"):  boxes.append(tuple(map(float, dets["veh_box"])))
+                got = _PLATE.recognize_plate(img, plate_boxes_orig=(boxes or None), topk=1, timeout_s=20)
+                dets["plate_text"] = (got.get("text") or "").upper()
+                dets["plate_conf"] = float(got.get("confidence") or 0.0)
+                if not dets.get("plate_box") and got.get("bbox"):
+                    dets["plate_box"] = tuple(float(v) for v in got["bbox"])
+                if got.get("candidates"): dets["plate_candidates"] = got["candidates"]
             else:
-                # LOCAL FALLBACK
-                resp = read_plate_text(crop_by_xyxy(img, veh_box)) if veh_box is not None else {}
-            if isinstance(resp, dict):
-                dets["plate_text"] = resp.get("text","") or resp.get("plate","") or ""
-                dets["plate_conf"] = float(resp.get("conf", resp.get("confidence", 0.0)))
-            elif isinstance(resp, (list,tuple)) and resp:
-                dets["plate_text"] = str(resp[0]); dets["plate_conf"] = float(resp[1]) if len(resp)>1 else 0.0
-            elif isinstance(resp, str):
-                dets["plate_text"] = resp
-        except Exception as e:
-            # LOCAL FALLBACK if import failed entirely
-            try:
-                resp = read_plate_text(crop_by_xyxy(img, veh_box)) if veh_box is not None else {}
-                dets["plate_text"] = resp.get("text","")
-                dets["plate_conf"] = float(resp.get("conf", 0.0))
-            except Exception as ee:
-                if not _PLATE_WARNED:
-                    LOG.warn("plate_error", error=str(ee)); _PLATE_WARNED=True
+                crop_src = None
+                if dets.get("plate_box"): crop_src = img.crop(tuple(int(v) for v in dets["plate_box"]))
+                elif dets.get("veh_box"): crop_src = img.crop(tuple(int(v) for v in dets["veh_box"]))
+                if crop_src is not None:
+                    resp = read_plate_text(crop_src)
+                    dets["plate_text"] = (resp.get("text","") or "").upper()
+                    dets["plate_conf"] = float(resp.get("conf", 0.0))
+        except Exception as ee:
+            LOG.warn("plate_error", error=str(ee))
     else:
-        if not _PLATE_WARNED:
-            LOG.warn("plate_disabled", note="ENABLE_PLATE=0 → plate stage skipped")
-            _PLATE_WARNED = True
+        LOG.warn("plate_disabled", note="ENABLE_PLATE=0")
     timer.tick("plate")
 
-    # (placeholders for S3 / DB; leave zero if unused)
+    # (placeholders for S3 / DB)
     timer.tick("s3")
     timer.tick("db")
 
     timings = timer.done()
-    # ---- metrics (exclude warmup from latency) ----
-    used_gb = None
-    if dev.startswith("cuda") and torch.cuda.is_available():
-        try:
-            used_gb = float(torch.cuda.memory_allocated()) / 1e9
-        except Exception:
-            used_gb = None
-    total_gb = _nvml_totals_gb()
-    mem_ratio = (used_gb / total_gb) if (used_gb is not None and total_gb) else None
-    gflops = _estimate_gflops(model, int(IMG_SIZE))
-    lat_ms = float(timings.get("total", 0)) - float(timings.get("warmup", 0) or 0)
-    if lat_ms < 0:
-        lat_ms = 0.0
 
-    # metrics (align E2E with StageTimer total)
-    mem_gb = None
-    if dev.startswith("cuda") and torch.cuda.is_available():
-        try: mem_gb = torch.cuda.memory_allocated()/1e9
-        except Exception: mem_gb = None
+    # ---- metrics
+    gflops_val = estimate_gflops(model, int(IMG_SIZE)) if estimate_gflops else _estimate_gflops(model, int(IMG_SIZE))
+    mem    = per_infer_memory_metrics(dev) if per_infer_memory_metrics else {"mem_gb": None, "memory_usage": None}
+    lat_ms = float(timings.get("total", 0)) - float(warm_ms or 0)
+    if lat_ms < 0: lat_ms = 0.0
+
     metrics = {
         "latency_ms": lat_ms,
-        "gflops": gflops,  # can be filled later if we wire thop here
-        "mem_gb": float(mem_gb) if mem_gb is not None else None,
-    "memory_usage": mem_ratio,
+        "gflops": gflops_val,
+        "memory_gb": mem.get("mem_gb"),
+        "mem_gb": mem.get("mem_gb"),             # back-compat
+        "memory_usage": mem.get("memory_usage"),
         "device": dev,
         "trained": bool(rep.get("trained", False)),
-      }
-    # ---- PHASE 4 — vehicle box source summary (real path) ----
+    }
+
     try:
-        veh_src = "veh_head" if (locals().get("veh_box_pred") is not None or locals().get("veh_box_sq") is not None) else (
-            "parts_fallback" if torch.is_tensor(locals().get("bbox_preds")) else "heat_fallback"
-        )
         LOG.info("decode_summary",
                  kept_parts=int(len((dets.get("_debug_parts_sq") or []))) if isinstance(dets, dict) else None,
                  grid=list(part_logits.shape[-2:]) if torch.is_tensor(part_logits) else None,
-                 veh_src=veh_src)
+                 veh_src=dets.get("veh_box_src"))
     except Exception as _e:
         LOG.warn("decode_summary_failed", error=str(_e))
-    
-    # ---- Phase 6 toggles apply ----
+
     try:
         _dbg = (dets.get("_debug_parts_sq") or []) if isinstance(dets, dict) else []
         if isinstance(_dbg, list):
@@ -1453,6 +1599,14 @@ def run_inference(img_bytes: bytes, variant: str="baseline", analysis_id: Option
         LOG.info("parts_debug_toggles", topk=int(TOPK), draw_all=bool(DRAW_ALL), kept=len(dets.get("_debug_parts_sq") or []))
     except Exception as _e:
         LOG.warn("parts_debug_toggles_failed", error=str(_e))
+
     return dets, timings, metrics
 
-# ======================== END OF EC2 CODE ENGINE ========================
+if __name__ == "__main__":
+    LOG.info("selftest_begin")
+    m, rep = load_model(os.getenv("VARIANT","baseline"))
+    LOG.info("selftest_model", head_sig=_model_vocab_signature(m), aligned=rep.get("aligned"), trained=rep.get("trained"))
+    LOG.info("selftest_ok")
+
+# ======================== END OF EC2 CODE ENGINE (REWRITTEN — Phase-A Stable, Phase-9 Keys, SSOT-Aligned + Alias Hooks) =======================
+

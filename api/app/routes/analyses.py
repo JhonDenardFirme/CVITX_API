@@ -1,10 +1,9 @@
-from fastapi import HTTPException, Query, Request
-from fastapi import APIRouter, Query, HTTPException
+# File: api/app/routes/analyses.py
+
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from uuid import UUID
 import os, re
-
-from uuid import UUID
 
 def _clean_uuid_for_path(raw: str) -> str:
     s = str(raw or "")
@@ -31,7 +30,12 @@ def _dsn_from_env() -> str:
     return re.sub(r'\+psycopg2', '', url)
 
 @router.get("/analyses/{analysis_id}")
-def consolidated_show(request: Request, analysis_id: str, presign: int = Query(1, ge=0, le=1), ttl: int = Query(3600, ge=60, le=86400)):
+def consolidated_show(
+    request: Request,
+    analysis_id: str,
+    presign: int = Query(1, ge=0, le=1),
+    ttl: int = Query(3600, ge=60, le=86400),
+):
     analysis_id = _clean_uuid_for_path(analysis_id)
     dsn = _dsn_from_env()
     with psycopg2.connect(dsn) as conn:
@@ -41,6 +45,7 @@ def consolidated_show(request: Request, analysis_id: str, presign: int = Query(1
             if not row:
                 raise HTTPException(status_code=404, detail="analysis not found")
             wid = row[0]
-    # 307 so clients keep method + Authorization header; auth enforced by the target route
-    url = f"/workspaces/{wid}/image-analyses/{analysis_id}"
+    # 307 so clients keep method + Authorization header; auth enforced by the target route.
+    # Forward presign & ttl; point to the canonical singular path.
+    url = f"/workspaces/{wid}/image-analysis/{analysis_id}?presign={presign}&ttl={ttl}"
     return RedirectResponse(url=url, status_code=307)

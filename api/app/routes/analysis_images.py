@@ -1,13 +1,13 @@
-from fastapi import HTTPException
+# File: api/app/routes/analysis_images.py
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 import os, uuid
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from uuid import UUID
 from pydantic import BaseModel
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
 import boto3
-
-from uuid import UUID
 
 def _clean_uuid_for_path(raw: str) -> str:
     s = str(raw or "")
@@ -19,7 +19,6 @@ def _clean_uuid_for_path(raw: str) -> str:
     except Exception:
         raise HTTPException(status_code=400, detail={"error": "invalid_analysis_id", "value": raw})
 
-
 from app.auth.deps import require_user
 from app.config import settings
 from app.services.sqs import send_json
@@ -30,13 +29,13 @@ router = APIRouter(prefix="/workspaces", tags=["image-analyses"])
 DB_URL = (os.getenv("DATABASE_URL") or os.getenv("DB_URL"))
 if not DB_URL:
     raise RuntimeError("Missing DATABASE_URL/DB_URL")
-DB_URL = DB_URL.replace("postgresql+psycopg2","postgresql")
+DB_URL = DB_URL.replace("postgresql+psycopg2", "postgresql")
 engine = create_engine(DB_URL, pool_pre_ping=True)
 s3 = boto3.client("s3", region_name=settings.aws_region)
 
 # Config
 S3_PREFIX = os.getenv("S3_IMAGE_ANALYSIS_PREFIX", "imageanalysis")
-TTL = int(os.getenv("ANALYSIS_PRESIGN_TTL", "604800"))  # 7d for GET urls
+TTL = int(os.getenv("ANALYSIS_PRESIGN_TTL", "604800"))  # server cap for GET urls (default 7d)
 Q_BASE = os.getenv("SQS_ANALYSIS_BASELINE_URL")
 Q_CMT  = os.getenv("SQS_ANALYSIS_CMT_URL")
 
@@ -135,9 +134,20 @@ def enqueue(workspace_id: str, analysis_id: str, me=Depends(require_user)):
     return {"ok": True, "status": "queued", "baseline": resp_b, "cmt": resp_c}
 
 @router.get("/{workspace_id}/image-analyses/{analysis_id}")
-def show(workspace_id: str, analysis_id: str, me=Depends(require_user)):
+def show(
+    workspace_id: str,
+    analysis_id: str,
+    presign: int = Query(1, ge=0, le=1),
+    ttl: int = Query(900, ge=60, le=604800),
+    me=Depends(require_user),
+):
+    """
+    Returns analysis details. When presign==1, mints short-lived GET URLs capped by server TTL.
+    """
     analysis_id = _clean_uuid_for_path(analysis_id)
     aid = analysis_id  # normalized string UUID, keep legacy var alive
+    effective_ttl = min(int(ttl), int(TTL))
+
     with engine.begin() as conn:
         a = conn.execute(text("""
           SELECT id, analysis_no, input_image_s3_key, status, error_msg, created_at
@@ -147,23 +157,43 @@ def show(workspace_id: str, analysis_id: str, me=Depends(require_user)):
         if not a:
             raise HTTPException(404, "Analysis not found")
 
-        results = conn.execute(text("""
-          SELECT model_variant::text, type, type_conf, make, make_conf, model, model_conf,
-       parts, colors, plate_text, plate_conf,
-       annotated_image_s3_key, vehicle_image_s3_key, plate_image_s3_key,
-       latency_ms, gflops, memory_usage, status, error_msg, colors_fbl, colors_overall_conf
-  FROM image_analysis_results
- WHERE analysis_id=:id
-        """), {"id": aid}).mappings().all()
+        # Try to include thresholds & evidence (Phase-9); fall back to legacy SELECT if columns don't exist.
+        try:
+            results = conn.execute(text("""
+              SELECT model_variant::text, type, type_conf, make, make_conf, model, model_conf,
+                     parts, colors, plate_text, plate_conf,
+                     annotated_image_s3_key, vehicle_image_s3_key, plate_image_s3_key,
+                     latency_ms, gflops, memory_usage, status, error_msg,
+                     colors_fbl, colors_overall_conf,
+                     thresholds, evidence
+                FROM image_analysis_results
+               WHERE analysis_id=:id
+            """), {"id": aid}).mappings().all()
+            have_extra_cols = True
+        except SQLAlchemyError:
+            results = conn.execute(text("""
+              SELECT model_variant::text, type, type_conf, make, make_conf, model, model_conf,
+                     parts, colors, plate_text, plate_conf,
+                     annotated_image_s3_key, vehicle_image_s3_key, plate_image_s3_key,
+                     latency_ms, gflops, memory_usage, status, error_msg, colors_fbl, colors_overall_conf
+                FROM image_analysis_results
+               WHERE analysis_id=:id
+            """), {"id": aid}).mappings().all()
+            have_extra_cols = False
 
-    orig_url = s3.generate_presigned_url("get_object",
-      Params={"Bucket": settings.s3_bucket, "Key": a["input_image_s3_key"]},
-      ExpiresIn=TTL)
+    # Input image block (URL conditional on presign)
+    input_block = {"s3_key": a["input_image_s3_key"]}
+    if presign:
+        input_block["url"] = s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": settings.s3_bucket, "Key": a["input_image_s3_key"]},
+            ExpiresIn=effective_ttl
+        )
 
     out = {
       "id": a["id"],
       "analysis_no": int(a["analysis_no"]),
-      "input_image": {"s3_key": a["input_image_s3_key"], "url": orig_url},
+      "input_image": input_block,
       "status": a["status"],
       "error_msg": a["error_msg"],
       "created_at": a["created_at"].isoformat() if a["created_at"] else None,
@@ -171,41 +201,48 @@ def show(workspace_id: str, analysis_id: str, me=Depends(require_user)):
     }
 
     for r in results:
-        ann_url = veh_url = plate_url = None
-        if r["annotated_image_s3_key"]:
-            ann_url = s3.generate_presigned_url("get_object",
-                Params={"Bucket": settings.s3_bucket, "Key": r["annotated_image_s3_key"],
-},
-                ExpiresIn=TTL)
-        if r.get("vehicle_image_s3_key"):
-            veh_url = s3.generate_presigned_url("get_object",
-                Params={"Bucket": settings.s3_bucket, "Key": r["vehicle_image_s3_key"]},
-                ExpiresIn=TTL)
-        if r.get("plate_image_s3_key"):
-            plate_url = s3.generate_presigned_url("get_object",
-                Params={"Bucket": settings.s3_bucket, "Key": r["plate_image_s3_key"]},
-                ExpiresIn=TTL)
-        
+        assets = {
+            "annotated_image_s3_key": r["annotated_image_s3_key"],
+            "vehicle_image_s3_key": r.get("vehicle_image_s3_key"),
+            "plate_image_s3_key": r.get("plate_image_s3_key"),
+        }
+        if presign:
+            if r["annotated_image_s3_key"]:
+                assets["annotated_url"] = s3.generate_presigned_url(
+                    "get_object",
+                    Params={"Bucket": settings.s3_bucket, "Key": r["annotated_image_s3_key"]},
+                    ExpiresIn=effective_ttl
+                )
+            if r.get("vehicle_image_s3_key"):
+                assets["vehicle_url"] = s3.generate_presigned_url(
+                    "get_object",
+                    Params={"Bucket": settings.s3_bucket, "Key": r["vehicle_image_s3_key"]},
+                    ExpiresIn=effective_ttl
+                )
+            if r.get("plate_image_s3_key"):
+                assets["plate_url"] = s3.generate_presigned_url(
+                    "get_object",
+                    Params={"Bucket": settings.s3_bucket, "Key": r["plate_image_s3_key"]},
+                    ExpiresIn=effective_ttl
+                )
+
         out["results"][r["model_variant"]] = {
             "type": r["type"], "type_conf": r["type_conf"],
             "make": r["make"], "make_conf": r["make_conf"],
             "model": r["model"], "model_conf": r["model_conf"],
             "colors": r["colors"], "parts": r["parts"],
             "plate_text": r["plate_text"], "plate_conf": r["plate_conf"],
-            "assets": {
-                "annotated_image_s3_key": r["annotated_image_s3_key"], "annotated_url": ann_url,
-                "vehicle_image_s3_key": r.get("vehicle_image_s3_key"), "vehicle_url": veh_url,
-                "plate_image_s3_key": r.get("plate_image_s3_key"), "plate_url": plate_url
-            },
+            "assets": assets,
             "latency_ms": r["latency_ms"], "gflops": r["gflops"],
             "memory_gb": r["memory_usage"],
-            "status": r["status"], "error_msg": r["error_msg"]
-        ,
-              "metadata": {
+            "status": r["status"], "error_msg": r["error_msg"],
+            "thresholds": (r.get("thresholds") if have_extra_cols else None),
+            "evidence":   (r.get("evidence")   if have_extra_cols else None),
+            "metadata": {
                 "colors_fbl": r.get("colors_fbl") or [],
                 "colors_overall_conf": r.get("colors_overall_conf")
-              }
-          }
+            }
+        }
     return out
 
 # List image analyses (plural) — simple paginated list
@@ -250,8 +287,14 @@ def enqueue_singular(workspace_id: str, analysis_id: str, me=Depends(require_use
     return enqueue(workspace_id, analysis_id, me)
 
 @alias.get("/{workspace_id}/image-analysis/{analysis_id}")
-def show_singular(workspace_id: str, analysis_id: str, me=Depends(require_user)):
-    return show(workspace_id, analysis_id, me)
+def show_singular(
+    workspace_id: str,
+    analysis_id: str,
+    presign: int = Query(1, ge=0, le=1),
+    ttl: int = Query(900, ge=60, le=604800),
+    me=Depends(require_user),
+):
+    return show(workspace_id, analysis_id, presign, ttl, me)
 
 # Singular LIST → reuse the plural list handler
 @alias.get("/{workspace_id}/image-analysis")

@@ -1,67 +1,62 @@
-from api.analysis.contracts import parse_analyze_image_message
-import uuid, re
-UUID_RE = re.compile(r'^[0-9a-fA-F-]{36}$')
-def _is_uuid(s:str)->bool:
-    try:
-        return bool(UUID_RE.match(s)) and str(uuid.UUID(s)) == s.lower()
-    except Exception:
-        return False
-import os, io, json, time, traceback, base64, decimal
+
+# api/workers/image_worker_baseline.py
+
+# -*- coding: utf-8 -*-
+"""
+CVITX · Baseline Worker
+- Pulls ANALYZE_IMAGE jobs from SQS
+- Runs engine inference (variant='baseline')
+- Writes crops/annotation to S3 under <workspace>/<analysis_id>/baseline/
+- UPSERTs results into image_analysis_results
+- Updates parent image_analyses.status when both variants present
+
+IMPORTANT: Pipeline-safe. No schema changes. Colors are FBL-only.
+"""
+
+from __future__ import annotations
+
+import os, io, json, time, traceback
 from datetime import datetime, timezone
 from typing import Optional, Tuple, Dict, Any
-from PIL import Image, ImageDraw, ImageFont
 
 import boto3
-import botocore
 import psycopg2, psycopg2.extras
+from PIL import Image, ImageDraw
 
 # --- engine & contracts -------------------------------------------------------
+from api.analysis.contracts import parse_analyze_image_message
 from api.analysis import engine as E
-try:
-    pass
-except Exception:
-    # Fallback parser (lenient): expects either {"s3_uri": "...", "workspace_id": "...", "analysis_id": ...}
-    def __legacy__parse_analyze_image_message(body: str) -> Dict[str, Any]:
-        d = json.loads(body)
-        # allow simple forms or nested {"src":{"s3_uri":...}}
-        s3_uri = d.get("s3_uri") or (d.get("src", {}) or {}).get("s3_uri")
-        if not s3_uri or not isinstance(s3_uri, str) or not s3_uri.startswith("s3://"):
-            raise ValueError("Message missing s3_uri")
-        return {
-            "workspace_id": d.get("workspace_id") or d.get("workspace") or "ws-dev",
-            "analysis_id": d.get("analysis_id") or d.get("analysis_no") or d.get("id") or 0,
-            "s3_uri": s3_uri,
-        }
 
 # --- constants ----------------------------------------------------------------
 VARIANT = "baseline"
 SVC     = "cvitx-worker"
 
 # --- envs ---------------------------------------------------------------------
-AWS_REGION = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "ap-southeast-1"
-SQS_URL    = os.getenv("SQS_ANALYSIS_BASELINE_URL")  # REQUIRED for prod loop
+AWS_REGION  = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "ap-southeast-1"
+SQS_URL     = os.getenv("SQS_ANALYSIS_BASELINE_URL")  # REQUIRED for loop
 VIS_TIMEOUT = int(os.getenv("SQS_VIS_TIMEOUT", "120"))
 WAIT_SECS   = int(os.getenv("SQS_WAIT_SECS", "20"))
+
 ENABLE_ANNOTATION = os.getenv("ENABLE_ANNOTATION", "1") not in ("0", "false", "False")
-DEST_BUCKET = os.getenv("RESULTS_S3_BUCKET") or os.getenv("S3_BUCKET")  # optional: default to input bucket if unset
-JPEG_Q = int(os.getenv("JPEG_QUALITY", "90"))
+DEST_BUCKET = os.getenv("RESULTS_S3_BUCKET") or os.getenv("S3_BUCKET")  # default to input bucket if unset
+JPEG_Q      = int(os.getenv("JPEG_QUALITY", "90"))
 
 # DB: either DATABASE_URL or discrete vars
-DB_URL   = (os.getenv("DATABASE_URL") or os.getenv("DB_URL"))
+DB_URL  = (os.getenv("DATABASE_URL") or os.getenv("DB_URL"))
 if DB_URL:
-    DB_URL = DB_URL.replace("postgresql+psycopg2","postgresql")
-DB_HOST  = os.getenv("DB_HOST")
-DB_PORT  = os.getenv("DB_PORT", "5432")
-DB_NAME  = os.getenv("DB_NAME")
-DB_USER  = os.getenv("DB_USER")
-DB_PASS  = os.getenv("DB_PASSWORD") or os.getenv("DB_PASS")
+    DB_URL = DB_URL.replace("postgresql+psycopg2", "postgresql")
+DB_HOST = os.getenv("DB_HOST")
+DB_PORT = os.getenv("DB_PORT", "5432")
+DB_NAME = os.getenv("DB_NAME")
+DB_USER = os.getenv("DB_USER")
+DB_PASS = os.getenv("DB_PASSWORD") or os.getenv("DB_PASS")
 
 # --- clients ------------------------------------------------------------------
 boto3.setup_default_session(region_name=AWS_REGION)
 _s3  = boto3.client("s3")
 _sqs = boto3.client("sqs")
 
-# --- logging (JSON lines, consistent with engine) ------------------------------
+# --- logging (JSON lines) -----------------------------------------------------
 def _now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
@@ -74,7 +69,7 @@ def log(level: str, event: str, **kw):
 def _connect():
     if DB_URL:
         return psycopg2.connect(DB_URL)
-    if not (DB_HOST and DB_NAME and DB_USER):
+    if not (DB_HOST and DB_NAME and DB_USER and DB_PASS):
         raise RuntimeError("DB connection envs missing (DATABASE_URL or DB_HOST/DB_NAME/DB_USER/DB_PASSWORD).")
     return psycopg2.connect(
         host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASS,
@@ -126,7 +121,8 @@ def _update_parent_status(conn, analysis_id: int):
 
 # --- s3 helpers ----------------------------------------------------------------
 def _parse_s3_uri(uri: str) -> Tuple[str, str]:
-    assert uri.startswith("s3://")
+    if not uri or not uri.startswith("s3://"):
+        raise ValueError("Invalid S3 URI")
     rest = uri[5:]
     bucket, key = rest.split("/", 1)
     return bucket, key
@@ -136,10 +132,12 @@ def _s3_get_bytes(bucket: str, key: str) -> bytes:
     return obj["Body"].read()
 
 def _jpeg_bytes(img: Image.Image) -> bytes:
-    buf = io.BytesIO(); img.save(buf, format="JPEG", quality=JPEG_Q); return buf.getvalue()
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=JPEG_Q)
+    return buf.getvalue()
 
 def _s3_put_image(bucket: str, key: str, img: Image.Image):
-    body = _jpeg_bytes(img)
+    body = _jpeg_bytes(img.convert("RGB"))
     _s3.put_object(Bucket=bucket, Key=key, Body=body, ContentType="image/jpeg", ACL="private")
     return key
 
@@ -147,20 +145,19 @@ def _s3_put_image(bucket: str, key: str, img: Image.Image):
 def _draw_anno(img: Image.Image, dets: Dict[str, Any]) -> Image.Image:
     """
     Draw vehicle + plate + per-part boxes.
-    - veh_box, plate_box are expected in ORIGINAL image coords (already back-mapped by engine).
-    - _debug_parts_sq has boxes in 640×640 square coords; use _debug_pad_scale (pad, scale) to map back.
+    veh_box, plate_box are in ORIGINAL coords (engine maps back).
+    _debug_parts_sq in 640x640 square coords; map back via _debug_pad_scale (pad, scale).
     """
     im = img.copy().convert("RGB")
     dr = ImageDraw.Draw(im)
 
-    # Title label
+    # Title
     label = []
     if dets.get("type")  is not None: label.append(str(dets["type"]))
     if dets.get("make")  is not None: label.append(str(dets["make"]))
     if dets.get("model") is not None: label.append(str(dets["model"]))
     title = " / ".join(label) or "vehicle"
 
-    # Helper: rectangle with clamping
     def _rect_xyxy(b, color="red", width=3):
         if not b: return None
         x1,y1,x2,y2 = map(int, map(round, b))
@@ -171,23 +168,21 @@ def _draw_anno(img: Image.Image, dets: Dict[str, Any]) -> Image.Image:
         dr.rectangle([x1,y1,x2,y2], outline=color, width=width)
         return (x1,y1,x2,y2)
 
-    # Vehicle & Plate (already original coords)
+    # Vehicle & Plate
     _rect_xyxy(dets.get("veh_box"),   "red",    3)
     _rect_xyxy(dets.get("plate_box"), "yellow", 3)
 
-    # Parts: map from square coords → original coords using pad/scale
+    # Parts: square → original
     parts   = dets.get("_debug_parts_sq") or []
     padinfo = dets.get("_debug_pad_scale") or {}
     pad     = padinfo.get("pad") or [0.0, 0.0]
     scale   = float(padinfo.get("scale") or 1.0)
     px, py  = float(pad[0]), float(pad[1])
-    s       = scale if scale not in (0.0, None) else 1.0
+    s       = scale if scale else 1.0
 
     def _sq_to_orig(x, y):
-        # inverse letterbox: orig = (square - pad) / scale
         xo = (float(x) - px) / max(1e-12, s)
         yo = (float(y) - py) / max(1e-12, s)
-        # clamp into image bounds
         X = max(0, min(int(round(xo)), im.width  - 1))
         Y = max(0, min(int(round(yo)), im.height - 1))
         return X, Y
@@ -204,10 +199,8 @@ def _draw_anno(img: Image.Image, dets: Dict[str, Any]) -> Image.Image:
             cf = float(p.get("conf", 0.0))
             dr.text((x1o, y1o + 2), f"{nm}:{cf:.2f}", fill="cyan")
 
-    # Title overlay
     dr.text((10,10), title, fill="white", stroke_width=2, stroke_fill="black")
     return im
-
 
 def _crop(img: Image.Image, box: Any) -> Optional[Image.Image]:
     if not box: return None
@@ -220,44 +213,54 @@ def _crop(img: Image.Image, box: Any) -> Optional[Image.Image]:
 
 # --- model warm cache ----------------------------------------------------------
 def _warm_model():
-    if hasattr(E, "load_model"):
-        E.load_model(VARIANT)
-        log("INFO","warm_loaded", note="engine.load_model cached", variant=VARIANT)
-        return
-    # Fallback: a tiny dummy call just to initialize shaders/kernels
-    import io
+    try:
+        if hasattr(E, "load_model"):
+            E.load_model(VARIANT)
+            log("INFO", "warm_loaded", note="engine.load_model cached")
+            return
+    except Exception as e:
+        log("WARN", "warm_load_failed", note=str(e))
+    # Fallback: tiny dummy to init kernels
     from PIL import Image as _PILImage
-    img = _PILImage.new("RGB",(64,64),(100,100,100))
+    img = _PILImage.new("RGB", (64, 64), (100, 100, 100))
     b = io.BytesIO(); img.save(b, format="JPEG"); data = b.getvalue()
-    _ = E.run_inference(data, variant=VARIANT, analysis_id="worker_warmup")
+    try:
+        _ = E.run_inference(data, variant=VARIANT, analysis_id="worker_warmup")
+        log("INFO", "warm_dummy_done")
+    except Exception as e:
+        log("WARN", "warm_dummy_failed", note=str(e))
 
 # --- core processing -----------------------------------------------------------
+def _overall_fbl_conf(fbl: Any) -> float:
+    try:
+        if not fbl: return 0.0
+        return float(max((float(x.get("conf", 0.0)) for x in fbl), default=0.0))
+    except Exception:
+        return 0.0
+
 def _process_one_message(body: str, receipt_handle: str):
+    # Parse message (supports input_image_s3_uri and legacy s3_uri via contracts)
     msg = parse_analyze_image_message(body)
     ws  = msg["workspace_id"]
     aid = msg["analysis_id"]
     src_bucket, src_key = _parse_s3_uri(msg["input_image_s3_uri"])
 
-    # bytes → inference
-    t0 = time.time()
+    # Skip/ack bad payloads early (empty key)
     if not src_key:
-
-        # Skip bad payloads (e.g., empty S3 key); delete message and continue
-
         try:
-
-            _sqs.delete_message(QueueUrl=(SQS_URL if 'SQS_URL' in globals() else QUEUE_URL), ReceiptHandle=receipt_handle)
-
+            if SQS_URL and receipt_handle:
+                _sqs.delete_message(QueueUrl=SQS_URL, ReceiptHandle=receipt_handle)
         except Exception:
-
             pass
-
-        log("WARN","bad_message", note="empty_s3_key")
-
+        log("WARN", "bad_message", note="empty_s3_key", analysis_id=aid)
         return
 
+    # bytes → inference
+    t0 = time.time()
     img_bytes = _s3_get_bytes(src_bucket, src_key)
-    dets, timings, metrics = E.run_inference(img_bytes, variant=VARIANT, analysis_id=f"job_{aid}_{VARIANT}")
+    dets, timings, metrics = E.run_inference(
+        img_bytes, variant=VARIANT, analysis_id=f"job_{aid}_{VARIANT}"
+    )
 
     # destination bucket/key prefix
     dest_bucket = DEST_BUCKET or src_bucket
@@ -279,14 +282,21 @@ def _process_one_message(body: str, receipt_handle: str):
     except Exception as e:
         log("WARN", "s3_write_crops_failed", analysis_id=aid, note=str(e))
 
-    # db upsert
+    # Prepare DB payload (schema-safe)
+    colors_fbl = dets.get("colors") or []     # FBL-only in canon
+    overall_cf = _overall_fbl_conf(colors_fbl)
+
     payload = {
-        "analysis_id": aid, "variant": VARIANT,
-        "type": dets.get("type"), "type_conf": dets.get("type_conf"),
-        "make": dets.get("make"), "make_conf": dets.get("make_conf"),
-        "model": dets.get("model"), "model_conf": dets.get("model_conf"),
+        "analysis_id": aid,
+        "variant": VARIANT,
+        "type": dets.get("type"),
+        "type_conf": dets.get("type_conf"),
+        "make": dets.get("make"),
+        "make_conf": dets.get("make_conf"),
+        "model": dets.get("model"),
+        "model_conf": dets.get("model_conf"),
         "parts_jsonb": json.dumps(dets.get("parts") or []),
-        "colors_jsonb": json.dumps(dets.get("colors") or []),
+        "colors_jsonb": json.dumps(colors_fbl),  # modern colors = FBL
         "plate_text": dets.get("plate_text") or None,
         "plate_conf": dets.get("plate_conf"),
         "annotated_key": keys["annotated"],
@@ -294,53 +304,43 @@ def _process_one_message(body: str, receipt_handle: str):
         "plate_key":     keys["plate"],
         "latency_ms": float(metrics.get("latency_ms") or timings.get("total") or 0.0),
         "gflops": metrics.get("gflops"),
-        "mem_gb": metrics.get("mem_gb"),
-              "memory_usage": metrics.get("memory_usage"),
-}
+        # DB column is 'memory_usage' (ratio in [0,1]); mem_gb not stored in this schema
+        "memory_usage": metrics.get("memory_usage"),
+        # FBL mirrors (gap closer per canon)
+        "colors_fbl_jsonb": json.dumps(colors_fbl[:3]),
+        "colors_overall_conf": float(overall_cf),
+    }
 
+    # DB upsert + parent update
     with _connect() as conn:
         conn.autocommit = True
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            # --- ensure FBL params exist for UPSERT ---
-            payload["colors_fbl_jsonb"] = json.dumps((
-            locals().get("colors_fbl")
-            or locals().get("results", {}).get("metadata", {}).get("colors_fbl")
-            or []
-            )[:3])
-            payload["colors_overall_conf"] = float((
-            locals().get("colors_overall_conf")
-            or locals().get("results", {}).get("metadata", {}).get("colors_overall_conf")
-            or 0.0
-            ))
-            if isinstance(payload.get("analysis_id"), str): aid = payload.get("analysis_id");
-        
-        if isinstance(aid, str):
-        
             cur.execute(UPSERT_SQL, payload)
-        
-        else:
-        
-            logger.info("skip_upsert_selftest", extra={"analysis_id": aid})
-            _update_parent_status(conn, aid)
-
+        _update_parent_status(conn, aid)
 
     dt_ms = int((time.time() - t0) * 1000)
-    log("INFO","upsert", analysis_id=aid, latency_ms=metrics.get("latency_ms"), end_to_end_ms=dt_ms, memory_usage=metrics.get("memory_usage"), mem_gb=metrics.get("mem_gb"), gflops=metrics.get("gflops"),
-        s3={k:v for k,v in keys.items() if v}, summary={
-            "type": dets.get("type"), "make": dets.get("make"), "model": dets.get("model")
-        })
+    log("INFO", "upsert",
+        analysis_id=aid,
+        latency_ms=metrics.get("latency_ms"),
+        end_to_end_ms=dt_ms,
+        memory_usage=metrics.get("memory_usage"),
+        mem_gb=metrics.get("mem_gb"),  # logged for observability
+        gflops=metrics.get("gflops"),
+        s3={k: v for k, v in keys.items() if v},
+        summary={"type": dets.get("type"), "make": dets.get("make"), "model": dets.get("model")}
+    )
 
     # ack message
     if SQS_URL and receipt_handle:
         _sqs.delete_message(QueueUrl=SQS_URL, ReceiptHandle=receipt_handle)
-        log("INFO","sqs_delete", analysis_id=aid)
+        log("INFO", "sqs_delete", analysis_id=aid)
 
 # --- main loop -----------------------------------------------------------------
 def main():
-    log("INFO","start", note="worker starting")
+    log("INFO", "start", note="worker starting")
     _warm_model()
     if not SQS_URL:
-        log("ERROR","no_queue_url", note="Set SQS_ANALYSIS_BASELINE_URL to enable the loop.")
+        log("ERROR", "no_queue_url", note="Set SQS_ANALYSIS_BASELINE_URL to enable the loop.")
         return
     while True:
         try:
@@ -356,24 +356,18 @@ def main():
             m = msgs[0]
             _process_one_message(m["Body"], m["ReceiptHandle"])
         except KeyboardInterrupt:
-            log("WARN","shutdown")
+            log("WARN", "shutdown")
             break
         except Exception as e:
-            log("ERROR","loop_error", err=str(e), trace=traceback.format_exc())
+            log("ERROR", "loop_error", err=str(e), trace=traceback.format_exc())
             time.sleep(2)
 
 if __name__ == "__main__":
     main()
 
-# --- Color (FBL) injection (Finish / Base / Lightness + single conf) ---
-try:
-    from api.analysis.utils import detect_vehicle_color, fbl_overall_conf
-    _veh_box = (detection.get("veh_box") if "detection" in locals() else None)
-    _colors_fbl = detect_vehicle_color(image_pil, veh_box=_veh_box)
-    _overall = fbl_overall_conf(_colors_fbl)
-    results.setdefault("metadata", {})
-    results["metadata"]["colors_fbl"] = _colors_fbl               # [{finish,base,lightness,conf}]
-    results["metadata"]["colors_overall_conf"] = _overall         # single 0..1
-except Exception:
-    pass
-
+# --- Legacy color injection (kept noted; not executed) -------------------------
+# NOTE: The old bottom-of-file color injection block that attempted to import
+# detect_vehicle_color/fbl_overall_conf and write into `results["metadata"]` was
+# executing at import-time under try/except and referenced undefined names.
+# It’s intentionally removed from execution to avoid side effects. If needed,
+# port that logic into the engine proper or a pre-UPSERT transform.
