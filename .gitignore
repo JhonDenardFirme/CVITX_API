@@ -48,3 +48,13 @@ backups/
 bundles/**/weights/**
 bundles/**/bundle.pt
 # engine/env artifacts
+# CVITX
+api/.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# model bundles / large binaries
+video_analysis/**/bundle/*
+*.pt
+*.engine
