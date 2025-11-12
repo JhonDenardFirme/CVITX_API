@@ -1,3 +1,4 @@
+from video_analysis.main_worker.utils import engine as E  # local engine copy
 # File: /home/ubuntu/cvitx/video_analysis/main_worker/worker.py
 """
 CVITX · Video Analysis Monorepo — Main-Model Worker

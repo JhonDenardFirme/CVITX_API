@@ -2,8 +2,8 @@
   "$comment": "File: /home/ubuntu/cvitx/video_analysis/schemas/snapshot_ready.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://cvitx.dev/schemas/snapshot_ready.json",
-  "title": "SNAPSHOT_READY (Outbound from YOLO → Inbound to Main-Model)",
-  "description": "Deterministic schema for snapshot notifications. The JPEG must already exist at the given S3 URI. Names are fixed: CTX####_CAM#_{track:06d}_{offsetMs:06d}.jpg",
+  "title": "SNAPSHOT_READY (Outbound from YOLO Worker)",
+  "description": "Schema for snapshot notifications emitted by the YOLO Video Worker.",
   "$defs": {
     "uuid": {
       "type": "string",
@@ -16,65 +16,43 @@
         { "type": "null" }
       ],
       "description": "RFC 3339 / ISO-8601 timestamp or null"
-    },
-    "yolo_type": {
-      "type": "string",
-      "enum": [
-        "Car",
-        "SUV",
-        "Van",
-        "LightTruck",
-        "Utility",
-        "Motorcycle",
-        "CarouselBus",
-        "E-Jeepney"
-      ]
     }
   },
-
   "type": "object",
   "additionalProperties": false,
-
   "properties": {
     "event": { "type": "string", "const": "SNAPSHOT_READY" },
-
     "video_id": { "$ref": "#/$defs/uuid" },
     "workspace_id": { "$ref": "#/$defs/uuid" },
-
     "workspace_code": {
       "type": "string",
-      "pattern": "^CTX\\d{4,}$",
-      "description": "Deterministic workspace code (e.g., CTX1005)"
+      "pattern": "^CTX\\d{4,}$"
     },
     "camera_code": {
       "type": "string",
-      "pattern": "^CAM\\d+$",
-      "description": "Deterministic camera code (e.g., CAM1)"
+      "pattern": "^CAM\\d+$"
     },
-
     "track_id": {
       "type": "integer",
-      "minimum": 1,
-      "description": "Monotonic ID within this video session (rendered as 6 digits in filename)"
+      "minimum": 0
     },
-
     "snapshot_s3_key": {
       "type": "string",
-      "pattern": "^s3://cvitx-uploads-dev-jdfirme/demo_user/[0-9a-fA-F-]{36}/[0-9a-fA-F-]{36}/snapshots/CTX\\d{4,}_CAM\\d+_\\d{6}_\\d{6}\\.jpg$",
-      "description": "FULL S3 URI to the 640×640 JPEG snapshot (bucket fixed to cvitx-uploads-dev-jdfirme)."
+      "description": "Either an S3 KEY (no scheme) or a full s3:// URI to the snapshot image.",
+      "pattern": "^(s3://[^/]+/)?demo_user/[0-9a-fA-F-]{36}/[0-9a-fA-F-]{36}/snapshots/CTX\\d{4,}_CAM\\d+_\\d{6}_\\d{6}\\.jpg$"
     },
-
     "recordedAt": { "$ref": "#/$defs/iso_datetime_nullable" },
     "detectedIn": {
       "type": "integer",
       "minimum": 0,
-      "description": "Offset in milliseconds from the start of the video"
+      "description": "Detection offset in milliseconds from stream start."
     },
     "detectedAt": { "$ref": "#/$defs/iso_datetime_nullable" },
-
-    "yolo_type": { "$ref": "#/$defs/yolo_type" }
+    "yolo_type": {
+      "type": "string",
+      "description": "Coarse vehicle type predicted by YOLO (e.g., Car, SUV, Bus)."
+    }
   },
-
   "required": [
     "event",
     "video_id",
@@ -88,7 +66,6 @@
     "detectedAt",
     "yolo_type"
   ],
-
   "examples": [
     {
       "event": "SNAPSHOT_READY",
@@ -103,7 +80,5 @@
       "detectedAt": null,
       "yolo_type": "SUV"
     }
-  ],
-
-  "$comment_aws": "================================================================================\nNO AWS SETUP REQUIRED FOR THIS FILE (Schema only; used by validators).\n================================================================================"
+  ]
 }

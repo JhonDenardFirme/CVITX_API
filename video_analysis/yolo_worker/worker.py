@@ -1,3 +1,5 @@
+# === START PASTE (yolo_worker/worker.py) ===
+# file: video_analysis/yolo_worker/worker.py
 """
 CVITX · YOLO Video Worker (DeepSORT-integrated)
 Consume PROCESS_VIDEO / PROCESS_VIDEO_DB → emit 640×640 snapshots → publish SNAPSHOT_READY
@@ -7,7 +9,7 @@ Changes vs. previous:
 - Track-quality buffer with best-frame selection:
     quality = 0.5*completeness + 0.3*area_score + 0.2*confidence
   gated by min_age, min_hits, min_completeness.
-- Keep 8-class CVITX taxonomy and strict normalization.
+- Updated to 17-class CVITX taxonomy and strict normalization.
 - Preserve S3 key format, JPEG params, schemas, and SQS contracts.
 
 This file is self-contained for tracking logic. Shared config, AWS, I/O, and validators
@@ -60,7 +62,7 @@ from video_analysis.worker_utils.common import (
 _YOLO_MODEL: Optional[YOLO] = None
 _YOLO_NAMES: Dict[int, str] = {}
 
-# CVITX 8-class YOLO taxonomy (from worker_config; order is the SSOT)
+# CVITX 17-class YOLO taxonomy (from worker_config; order is the SSOT)
 _TAXONOMY: Tuple[str, ...] = tuple(YOLO_VEHICLE_TYPES)
 _TAXONOMY_SET = set(_TAXONOMY)
 
@@ -77,16 +79,42 @@ def _load_yolo() -> YOLO:
 
 # ============================== Class Normalizer =========================== #
 
+# Direct normalized synonyms → 17-class targets
 _SYNONYM_TABLE = {
+    # Cars & light passenger
     "car": "Car", "automobile": "Car", "sedan": "Car", "coupe": "Car", "hatchback": "Car",
+    "sports car": "Car",
     "suv": "SUV", "crossover": "SUV",
-    "van": "Van", "minivan": "Van", "panelvan": "Van",
-    "truck": "LightTruck", "pickup": "LightTruck", "pickup truck": "LightTruck",
-    "box truck": "LightTruck", "lorry": "LightTruck",
+    "van": "Van", "minivan": "Van", "panelvan": "Van", "mpv": "Van",
+    "pickup": "Pickup", "pickup truck": "Pickup", "ute": "Pickup",
     "utility": "Utility", "utility vehicle": "Utility",
-    "motorcycle": "Motorcycle", "motorbike": "Motorcycle", "bike": "Motorcycle", "scooter": "Motorcycle",
-    "bus": "CarouselBus", "coach": "CarouselBus",
-    "e-jeepney": "E-Jeepney", "e jeepney": "E-Jeepney", "jeepney": "E-Jeepney",
+
+    # 2-wheelers & small
+    "motorcycle": "Motorcycle", "motorbike": "Motorcycle", "moto": "Motorcycle",
+    "scooter": "Motorcycle", "moped": "Motorcycle",
+    "bicycle": "Bicycle", "bike": "Bicycle",
+    "e-bike": "E-Bike", "ebike": "E-Bike", "e bike": "E-Bike",
+
+    # 3-wheelers & PH-specific
+    "pedicab": "Pedicab",
+    "tricycle": "Tricycle", "tri-bike": "Tricycle", "tribike": "Tricycle",
+
+    # Jeepneys
+    "jeepney": "Jeepney",
+    "e-jeepney": "E-Jeepney", "e jeepney": "E-Jeepney", "electric jeepney": "E-Jeepney",
+
+    # Buses
+    "bus": "Bus", "coach": "Bus", "shuttle bus": "Bus",
+    "carousel bus": "CarouselBus", "edsa carousel": "CarouselBus",
+
+    # Trucks
+    "light truck": "LightTruck", "box truck": "LightTruck", "lorry": "LightTruck",
+    "container truck": "ContainerTruck", "container": "ContainerTruck", "semi": "ContainerTruck", "tractor-trailer": "ContainerTruck",
+
+    # Specials
+    "ambulance": "SpecialVehicle", "firetruck": "SpecialVehicle", "fire truck": "SpecialVehicle",
+    "police": "SpecialVehicle", "tow truck": "SpecialVehicle", "bulldozer": "SpecialVehicle",
+    "backhoe": "SpecialVehicle", "forklift": "SpecialVehicle", "crane": "SpecialVehicle",
 }
 
 def _map_source_name_to_taxonomy(src_name: str) -> Optional[str]:
@@ -94,23 +122,42 @@ def _map_source_name_to_taxonomy(src_name: str) -> Optional[str]:
     if n in _SYNONYM_TABLE:
         mapped = _SYNONYM_TABLE[n]
         return mapped if mapped in _TAXONOMY_SET else None
-    # conservative substring fallbacks
-    if "pickup" in n or "truck" in n or "lorry" in n:
+
+    # conservative substring fallbacks (order matters; avoid over-mapping)
+    if "e-jeep" in n or "e jeep" in n:
+        return "E-Jeepney" if "E-Jeepney" in _TAXONOMY_SET else None
+    if "jeepney" in n:
+        return "Jeepney" if "Jeepney" in _TAXONOMY_SET else None
+    if "carousel" in n and "bus" in n:
+        return "CarouselBus" if "CarouselBus" in _TAXONOMY_SET else None
+    if "bus" in n or "coach" in n or "shuttle" in n:
+        return "Bus" if "Bus" in _TAXONOMY_SET else None
+    if "container" in n or "trailer" in n or "semi" in n:
+        return "ContainerTruck" if "ContainerTruck" in _TAXONOMY_SET else None
+    if "pickup" in n or "ute" in n:
+        return "Pickup" if "Pickup" in _TAXONOMY_SET else None
+    if "truck" in n or "lorry" in n:
         return "LightTruck" if "LightTruck" in _TAXONOMY_SET else None
-    if "van" in n:
-        return "Van" if "Van" in _TAXONOMY_SET else None
+    if "tricycle" in n or "tri-bike" in n or "tribike" in n:
+        return "Tricycle" if "Tricycle" in _TAXONOMY_SET else None
+    if "pedicab" in n:
+        return "Pedicab" if "Pedicab" in _TAXONOMY_SET else None
+    if "ebike" in n or "e-bike" in n or "e bike" in n:
+        return "E-Bike" if "E-Bike" in _TAXONOMY_SET else None
+    if "bicycle" in n or (("bike" in n) and ("motor" not in n)):
+        return "Bicycle" if "Bicycle" in _TAXONOMY_SET else None
+    if "motor" in n or "scooter" in n or "moped" in n or "motorbike" in n:
+        return "Motorcycle" if "Motorcycle" in _TAXONOMY_SET else None
     if "suv" in n or "crossover" in n:
         return "SUV" if "SUV" in _TAXONOMY_SET else None
-    if "bus" in n or "coach" in n:
-        return "CarouselBus" if "CarouselBus" in _TAXONOMY_SET else None
-    if "motor" in n or "scooter" in n or ("bike" in n and "motor" in n):
-        return "Motorcycle" if "Motorcycle" in _TAXONOMY_SET else None
-    if "jeepney" in n:
-        return "E-Jeepney" if "E-Jeepney" in _TAXONOMY_SET else None
-    if "car" in n or "sedan" in n or "coupe" in n or "hatch" in n:
-        return "Car" if "Car" in _TAXONOMY_SET else None
+    if "van" in n or "minivan" in n or "mpv" in n:
+        return "Van" if "Van" in _TAXONOMY_SET else None
     if "utility" in n:
         return "Utility" if "Utility" in _TAXONOMY_SET else None
+    if "car" in n or "sedan" in n or "coupe" in n or "hatch" in n:
+        return "Car" if "Car" in _TAXONOMY_SET else None
+    if any(k in n for k in ["ambulance", "fire", "police", "bulldozer", "backhoe", "forklift", "crane", "tow"]):
+        return "SpecialVehicle" if "SpecialVehicle" in _TAXONOMY_SET else None
     return None  # drop non-vehicle classes
 
 # ============================== Geometry / Quality ========================= #
@@ -155,7 +202,7 @@ def _quality(b: Tuple[int,int,int,int], W: int, H: int, conf: float) -> Tuple[fl
 # ============================== DeepSORT tracker =========================== #
 
 # One tracker per process. Tuned for street scenes.
-_TRACKER = DeepSort(max_age=30, n_init=3, max_iou_distance=0.7, nn_budget=100)
+TRACKER = DeepSort(max_age=30, n_init=3, max_iou_distance=0.7, nn_budget=100)
 
 # Per-track buffers
 @dataclass
@@ -166,7 +213,7 @@ class TrackBuf:
     best_frame_idx: int = -1
     age: int = 0
     hits: int = 0
-    votes: Dict[str, int] = None  # class vote (8-class)
+    votes: Dict[str, int] = None  # class vote (17-class)
     crowd_iou: float = 0.0
     def __post_init__(self):
         if self.votes is None:
@@ -270,7 +317,7 @@ def _rank_and_export_bestmap(
             current_target = frame_targets[ptr] if ptr < len(frame_targets) else None
             continue
 
-        H, W = frame.shape [:2]
+        H, W = frame.shape[:2]
         for tid, tb in needs_by_frame[current_target]:
             if tb.best_box is None:
                 continue
@@ -298,7 +345,7 @@ def _rank_and_export_bestmap(
             s3.put_object(Bucket=bucket, Key=key, Body=jpeg, ContentType="image/jpeg")
             full_uri = s3_uri(key)
 
-            # pick majority vote (already 8-class), default to Car if empty (shouldn't happen)
+            # pick majority vote (17-class), default to Car if empty
             if tb.votes:
                 yolo_type = max(tb.votes.items(), key=lambda kv: kv[1])[0]
             else:
@@ -365,7 +412,7 @@ def _process_one_video(body: Dict[str, Any]) -> int:
 
     # Prepare detector + DeepSORT
     model = _load_yolo()
-    tracker = _TRACKER  # singleton
+    tracker = TRACKER  # singleton
     track_buf: Dict[int, TrackBuf] = {}
 
     imgsz = int(CONFIG["YOLO_IMGSZ"])
@@ -408,7 +455,7 @@ def _process_one_video(body: Dict[str, Any]) -> int:
                 if w <= 0 or h <= 0:
                     continue
                 ds_dets.append(([x1, y1, w, h], conf, cls_id))
-                raw.append({"bbox": (x1,y1,x2,y2), "conf": conf, "cls8": mapped})
+                raw.append({"bbox": (x1,y1,x2,y2), "conf": conf, "cls17": mapped})
                 kept_dets += 1
 
         # Update DeepSORT
@@ -450,9 +497,9 @@ def _process_one_video(body: Dict[str, Any]) -> int:
                 track_buf[tid] = tb
             tb.age += 1
             tb.hits += 1
-            # vote for 8-class label
-            cls8 = best_det["cls8"]
-            tb.votes[cls8] = tb.votes.get(cls8, 0) + 1
+            # vote for 17-class label
+            cls17 = best_det["cls17"]
+            tb.votes[cls17] = tb.votes.get(cls17, 0) + 1
 
             # keep best candidate if sufficiently complete
             if comp >= _MIN_COMPLETENESS and q > tb.best_q:
@@ -550,3 +597,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+

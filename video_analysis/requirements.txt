@@ -1,0 +1,42 @@
+# ============================================================
+# CVITX · Video Analysis Monorepo
+# File: /home/ubuntu/cvitx/video_analysis/requirements.txt
+# Purpose: Reproducible YOLO → SNAPSHOT_READY → Main-Model pipeline
+# Python: 3.10+ recommended
+# ⚠️ AWS SETUP FOR THIS FILE: NONE (this only installs libs)
+# ============================================================
+
+# --- AWS + DB clients ---
+boto3==1.34.*            # S3/SQS clients
+psycopg2-binary==2.9.*   # Postgres client for DB reads/writes
+
+# --- Validation / config ---
+pydantic==2.9.*          # Strict message schemas (PROCESS_VIDEO, SNAPSHOT_READY)
+
+# --- CV / math stack ---
+opencv-python-headless==4.10.*  # Decode frames, resize, JPEG encode (no GUI)
+numpy==1.26.*                   # Stable ABI on manylinux wheels
+scipy==1.11.*                   # Needed by DeepSORT math (opt., distances)
+scikit-image==0.24.*           # Utility ops (optional but useful)
+
+# --- Detection ---
+ultralytics==8.3.*       # YOLO inference (pulls a compatible PyTorch)
+
+# --- Tracking (DeepSORT) ---
+deep-sort-realtime==1.3.*  # Appearance-assisted tracker
+filterpy==1.4.*            # Kalman filter utilities used by DeepSORT
+
+# ============================================================
+# Notes:
+# • Torch/CUDA: Ultralytics will install a compatible PyTorch automatically.
+#   If you prefer pinning a specific CUDA wheel, install torch/torchvision first
+#   following PyTorch’s official command for your CUDA driver, then run:
+#     pip install -r /home/ubuntu/cvitx/video_analysis/requirements.txt
+#
+# • Minor pins (==X.Y.*) allow patch updates while avoiding breaking changes.
+#   For fully frozen builds, replace “*” with exact patch versions after a green run.
+#
+# • Install inside your API venv:
+#     . /home/ubuntu/cvitx/api/.venv/bin/activate
+#     pip install -r /home/ubuntu/cvitx/video_analysis/requirements.txt
+# ============================================================

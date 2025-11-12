@@ -1,3 +1,5 @@
+# === START PASTE (worker_config.py) ===
+# file: video_analysis/worker_config.py
 """
 CVITX · Video Analysis Monorepo
 Deterministic, centralized runtime config for BOTH workers:
@@ -15,19 +17,6 @@ Sample data shapes (for implementers):
 - Model input: [1, 3, 640, 640] float32
 - YOLO det per frame: D×6 → [x1,y1,x2,y2,conf,cls]
 - Colors (FBL): list[{"finish": null|Matte|Metallic, "base": TitleCase, "lightness": null|Light, "conf": 0..1}]
-
-================================================================================
-⚠️ AWS SETUP REQUIRED (once per environment)
-   • S3 bucket must exist: s3://cvitx-uploads-dev-jdfirme
-   • SQS queues must exist:
-       - Video tasks    : https://sqs.ap-southeast-2.amazonaws.com/118730128890/cvitx-video-tasks
-       - Snapshot tasks : https://sqs.ap-southeast-2.amazonaws.com/118730128890/cvitx-snapshot-tasks
-     with DLQs + RedrivePolicy (maxReceiveCount≈5), VisibilityTimeout≈300s, LongPolling=10s
-   • IAM roles:
-       - YOLO worker: s3:GetObject on /raw/*, s3:PutObject on /snapshots/*; SQS Receive/Delete(ChangeVisibility) on video-tasks; SQS Send on snapshot-tasks
-       - Main worker: s3:GetObject on /snapshots/*; SQS Receive/Delete(ChangeVisibility) on snapshot-tasks
-   • Security: do NOT expose presigned URLs or credentials in client apps. DB is private (RDS SG only).
-================================================================================
 """
 
 from __future__ import annotations
@@ -63,12 +52,11 @@ def _redact_dsn(dsn: str) -> str:
     return re.sub(r"(://[^:]+:)[^@]+@", r"\1****@", dsn)
 
 # --------------------------- Frozen Taxonomies/Regex ------------------------ #
-# ✅ Canonical 8-class, no-space taxonomy (exact order is SSOT)
+# ✅ Canonical 17-class, no-space taxonomy (exact order is SSOT)
 YOLO_VEHICLE_TYPES: Final[Tuple[str, ...]] = (
-   "Car", "SUV", "Pickup", "Van", "Utility Vehicle", "Motorcycle",
-    "Bicycle", "E-Bike", "Pedicab", "Tricycle", "Jeepney",
-    "E-Jeepney", "Bus", "CarouselBus", "LightTruck",
-    "ContainerTruck", "SpecialVehicle"
+    "Car", "SUV", "Pickup", "Van", "Utility", "Motorcycle",
+    "Bicycle", "E-Bike", "Pedicab", "Tricycle", "Jeepney", "E-Jeepney",
+    "Bus", "CarouselBus", "LightTruck", "ContainerTruck", "SpecialVehicle"
 )
 
 # Deterministic mappings if needed by workers
@@ -105,7 +93,6 @@ _SQS_SNAPSHOT_QUEUE_URL = _env("SQS_SNAPSHOT_QUEUE_URL",
 # Database DSN (dev) — can be overridden by DB_URL env. Redacted in summaries.
 _DB_URL = _env(
     "DB_URL",
-    # Dev RDS from parent roadmap (explicitly stored as canonical)
     "postgresql+psycopg2://cvitx_admin:cvitx-pg-password@cvitx-dev-pg.crawocq82lpx.ap-southeast-2.rds.amazonaws.com:5432/cvitx",
 )
 
@@ -266,19 +253,17 @@ def assert_config_sane() -> None:
     if not (0.0 < float(CONFIG["YOLO_IOU"]) <= 1.0):
         raise ValueError("YOLO_IOU must be in (0, 1].")
 
-    # Types sanity — exact 8-class, no-space sequence (SSOT)
+    # Types sanity — exact 17-class, no-space sequence (SSOT)
     _expected = (
-        "Car",
-        "SUV",
-        "Van",
-        "LightTruck",
-        "Utility",
-        "Motorcycle",
-        "CarouselBus",
-        "E-Jeepney",
+        "Car", "SUV", "Pickup", "Van", "Utility", "Motorcycle",
+        "Bicycle", "E-Bike", "Pedicab", "Tricycle", "Jeepney", "E-Jeepney",
+        "Bus", "CarouselBus", "LightTruck", "ContainerTruck", "SpecialVehicle"
     )
     if tuple(YOLO_VEHICLE_TYPES) != _expected:
-        raise ValueError("YOLO_VEHICLE_TYPES must be exactly 8 classes in this order: Car,SUV,Van,LightTruck,Utility,Motorcycle,CarouselBus,E-Jeepney")
+        raise ValueError(
+            "YOLO_VEHICLE_TYPES must be exactly 17 classes in this order: "
+            "Car,SUV,Pickup,Van,Utility,Motorcycle,Bicycle,E-Bike,Pedicab,Tricycle,Jeepney,E-Jeepney,Bus,CarouselBus,LightTruck,ContainerTruck,SpecialVehicle"
+        )
 
 # Eager sanity check on import (explicit by design; fail fast)
 assert_config_sane()
@@ -297,3 +282,40 @@ __all__ = [
     "config_summary",
     "assert_config_sane",
 ]
+
+# === END PASTE (worker_config.py) ===
+# --- Stable SQS alias keys (optional but convenient) ---
+try:
+    _cfg = CONFIG  # already built above
+    def _alias(dst, *candidates):
+        for k in candidates:
+            v = _cfg.get(k)
+            if isinstance(v, str) and v.startswith("https://sqs."):
+                _cfg[dst] = v
+                return
+    _alias("SQS_VIDEO_Q_URL",    "SQS_VIDEO_QUEUE_URL", "SQS_VIDEO_URL", "videoQ", "VIDEO_Q_URL")
+    _alias("SQS_SNAPSHOT_Q_URL", "SQS_SNAPSHOT_QUEUE_URL", "SQS_SNAPSHOT_URL", "snapQ", "SNAPSHOT_Q_URL")
+except Exception as _e:
+    # Non-fatal: aliasing is just sugar
+    pass
+
+
+# --- FINALIZER: stable SQS alias keys (runs last) ---
+try:
+    # Ensure mutability
+    try:
+        CONFIG = dict(CONFIG)
+    except Exception:
+        pass
+
+    # If canonical keys exist (videoQ/snapQ), mirror them to the alias names.
+    _video_url = CONFIG.get("SQS_VIDEO_QUEUE_URL") or CONFIG.get("SQS_VIDEO_URL") or CONFIG.get("videoQ")
+    _snap_url  = CONFIG.get("SQS_SNAPSHOT_QUEUE_URL") or CONFIG.get("SQS_SNAPSHOT_URL") or CONFIG.get("snapQ")
+
+    if isinstance(_video_url, str) and _video_url.startswith("https://sqs."):
+        CONFIG["SQS_VIDEO_Q_URL"] = _video_url
+    if isinstance(_snap_url, str) and _snap_url.startswith("https://sqs."):
+        CONFIG["SQS_SNAPSHOT_Q_URL"] = _snap_url
+except Exception:
+    pass
+

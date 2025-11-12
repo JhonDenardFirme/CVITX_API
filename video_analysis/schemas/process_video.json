@@ -18,15 +18,12 @@
       "description": "RFC 3339 / ISO-8601 timestamp or null"
     }
   },
-
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "event": { "type": "string", "const": "PROCESS_VIDEO" },
-
     "video_id": { "$ref": "#/$defs/uuid" },
     "workspace_id": { "$ref": "#/$defs/uuid" },
-
     "workspace_code": {
       "type": "string",
       "pattern": "^CTX\\d{4,}$",
@@ -37,22 +34,18 @@
       "pattern": "^CAM\\d+$",
       "description": "Deterministic camera code (e.g., CAM1)"
     },
-
     "s3_key_raw": {
       "type": "string",
       "pattern": "^demo_user/[0-9a-fA-F-]{36}/[0-9a-fA-F-]{36}/raw/.+\\.mp4$",
       "description": "S3 KEY (not URI) to the raw MP4. Bucket is fixed by deployment config."
     },
-
     "frame_stride": {
       "type": "integer",
       "minimum": 1,
       "description": "Decode every Nth frame (>=1). If missing upstream, API must supply a default."
     },
-
     "recordedAt": { "$ref": "#/$defs/iso_datetime_nullable" }
   },
-
   "required": [
     "event",
     "video_id",
@@ -63,7 +56,6 @@
     "frame_stride",
     "recordedAt"
   ],
-
   "examples": [
     {
       "event": "PROCESS_VIDEO",
@@ -76,6 +68,5 @@
       "recordedAt": null
     }
   ],
-
   "$comment_aws": "================================================================================\nNO AWS SETUP REQUIRED FOR THIS FILE (Schema only; used by validators).\n================================================================================"
 }

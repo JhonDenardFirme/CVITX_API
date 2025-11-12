@@ -1,3 +1,5 @@
+# === START PASTE (worker_utils/common.py) ===
+# file: video_analysis/worker_utils/common.py
 """
 CVITX · Video Analysis Monorepo — Shared Utilities (yolo_worker & main_worker)
 
@@ -14,18 +16,6 @@ Design rules:
 1) ENV is read ONLY in worker_config.py — import CONFIG here.
 2) All defaults and invariants come from the SSOT (worker_config.CONFIG).
 3) Functions are deterministic and side-effect free (except I/O ops by design).
-
-================================================================================
-⚠️ AWS SETUP REMINDER (once per environment)
-   • S3 bucket must exist: s3://cvitx-uploads-dev-jdfirme
-   • SQS queues must exist:
-       - Video tasks    : https://sqs.ap-southeast-2.amazonaws.com/118730128890/cvitx-video-tasks
-       - Snapshot tasks : https://sqs.ap-southeast-2.amazonaws.com/118730128890/cvitx-snapshot-tasks
-     with DLQs + RedrivePolicy (maxReceiveCount≈5), VisibilityTimeout≈300s, LongPolling=10s
-   • IAM roles:
-       - YOLO worker: s3:GetObject on /raw/*, s3:PutObject on /snapshots/*; SQS Receive/Delete(ChangeVisibility) on video-tasks; SQS Send on snapshot-tasks
-       - Main worker: s3:GetObject on /snapshots/*; SQS Receive/Delete(ChangeVisibility) on snapshot-tasks
-================================================================================
 """
 
 from __future__ import annotations
@@ -501,3 +491,8 @@ __all__ = [
     "SNAPSHOT_URI_REGEX",
     "s3_uri",
 ]
+
+
+
+
+# === END PASTE (worker_utils/common.py) ===
