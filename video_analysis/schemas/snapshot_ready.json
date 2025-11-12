@@ -1,0 +1,84 @@
+{
+  "$comment": "File: /home/ubuntu/cvitx/video_analysis/schemas/snapshot_ready.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cvitx.dev/schemas/snapshot_ready.json",
+  "title": "SNAPSHOT_READY (Outbound from YOLO Worker)",
+  "description": "Schema for snapshot notifications emitted by the YOLO Video Worker.",
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "iso_datetime_nullable": {
+      "oneOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "null" }
+      ],
+      "description": "RFC 3339 / ISO-8601 timestamp or null"
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "event": { "type": "string", "const": "SNAPSHOT_READY" },
+    "video_id": { "$ref": "#/$defs/uuid" },
+    "workspace_id": { "$ref": "#/$defs/uuid" },
+    "workspace_code": {
+      "type": "string",
+      "pattern": "^CTX\\d{4,}$"
+    },
+    "camera_code": {
+      "type": "string",
+      "pattern": "^CAM\\d+$"
+    },
+    "track_id": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "snapshot_s3_key": {
+      "type": "string",
+      "description": "Either an S3 KEY (no scheme) or a full s3:// URI to the snapshot image.",
+      "pattern": "^(s3://[^/]+/)?demo_user/[0-9a-fA-F-]{36}/[0-9a-fA-F-]{36}/snapshots/CTX\\d{4,}_CAM\\d+_\\d{6}_\\d{6}\\.jpg$"
+    },
+    "recordedAt": { "$ref": "#/$defs/iso_datetime_nullable" },
+    "detectedIn": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Detection offset in milliseconds from stream start."
+    },
+    "detectedAt": { "$ref": "#/$defs/iso_datetime_nullable" },
+    "yolo_type": {
+      "type": "string",
+      "description": "Coarse vehicle type predicted by YOLO (e.g., Car, SUV, Bus)."
+    }
+  },
+  "required": [
+    "event",
+    "video_id",
+    "workspace_id",
+    "workspace_code",
+    "camera_code",
+    "track_id",
+    "snapshot_s3_key",
+    "recordedAt",
+    "detectedIn",
+    "detectedAt",
+    "yolo_type"
+  ],
+  "examples": [
+    {
+      "event": "SNAPSHOT_READY",
+      "video_id": "c03b34d8-9a6a-4701-998a-de9001fe2fa4",
+      "workspace_id": "8cdc46f9-12eb-4e07-ac44-f84dd1fdfb96",
+      "workspace_code": "CTX1005",
+      "camera_code": "CAM1",
+      "track_id": 305,
+      "snapshot_s3_key": "s3://cvitx-uploads-dev-jdfirme/demo_user/8cdc46f9-12eb-4e07-ac44-f84dd1fdfb96/c03b34d8-9a6a-4701-998a-de9001fe2fa4/snapshots/CTX1005_CAM1_000305_002272.jpg",
+      "recordedAt": null,
+      "detectedIn": 2272,
+      "detectedAt": null,
+      "yolo_type": "SUV"
+    }
+  ]
+}
