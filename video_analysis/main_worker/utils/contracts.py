@@ -1,18 +1,141 @@
-# contracts.py — maps SNAPSHOT_READY → engine I/O (variant='main')
-# Fill in mappings if not already present in your project.
-from typing import Any, Dict
+# file: video_analysis/main_worker/utils/contracts.py
+# -*- coding: utf-8 -*-
+"""
+Contract helpers for Video Analysis (SNAPSHOT_READY + optional ANALYZE_IMAGE for parity).
+"""
 
-def snapshot_ready_to_engine_inputs(msg: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Convert a SNAPSHOT_READY SQS message into engine.run() kwargs.
-    Expected keys (example): input_image_s3_uri, workspace_id, analysis_id, etc.
-    """
-    return {
-        "variant": "main",
-        "input_image_s3_uri": msg.get("input_image_s3_uri"),
-        "workspace_id": msg.get("workspace_id"),
-        "analysis_id": msg.get("analysis_id"),
-        # Add other passthroughs if your engine.run supports them:
-        # "presign": msg.get("presign", False),
-        # "ttl": msg.get("ttl", 900),
-    }
+from __future__ import annotations
+import json
+from typing import Any, Dict, List, Optional
+
+class ContractError(Exception):
+    pass
+
+# ----------------------------- ANALYZE_IMAGE (compat) -----------------------------
+
+def parse_analyze_image_message(body: str) -> Dict[str, Any]:
+    try:
+        d = json.loads(body)
+    except Exception as e:
+        raise ContractError(f"Invalid JSON: {e}")
+    if "input_image_s3_uri" not in d and "s3_uri" in d:
+        d["input_image_s3_uri"] = d["s3_uri"]
+    base_required = ["event", "analysis_id", "workspace_id", "model_variant"]
+    missing_base = [k for k in base_required if k not in d]
+    if missing_base:
+        raise ContractError(f"Missing fields: {missing_base}")
+    if d["event"] != "ANALYZE_IMAGE":
+        raise ContractError(f"Unexpected event: {d['event']}")
+    if not ("input_image_s3_uri" in d or "input_s3_key" in d):
+        raise ContractError("Missing input source: need one of ['input_image_s3_uri'|'s3_uri'|'input_s3_key'].")
+    return d
+
+# ----------------------------- SNAPSHOT_READY (new) -----------------------------
+
+def parse_snapshot_ready(body: str) -> Dict[str, Any]:
+    try:
+        d = json.loads(body)
+    except Exception as e:
+        raise ContractError(f"Invalid JSON: {e}")
+    if d.get("event") != "SNAPSHOT_READY":
+        raise ContractError(f"Unexpected event: {d.get('event')}")
+    required = ["workspace_id", "video_id", "snapshot_s3_key"]
+    missing = [k for k in required if not d.get(k)]
+    if missing:
+        raise ContractError(f"Missing fields: {missing}")
+    sk = str(d["snapshot_s3_key"])
+    if not (sk.startswith("s3://") or "/" in sk):
+        raise ContractError("snapshot_s3_key must be an S3 URI (s3://...) or 'bucket/key' form.")
+    return d
+
+# ----------------------------- Optional models -----------------------------
+from pydantic import BaseModel, Field, root_validator
+
+class ColorFBL(BaseModel):
+    finish: Optional[str] = None
+    base: Optional[str] = None
+    lightness: Optional[str] = None
+    conf: float = 0.0
+
+class AnalysisMetrics(BaseModel):
+    latency_ms: float
+    gflops: Optional[float] = None
+    mem_gb: Optional[float] = Field(default=None, alias="memory_gb")
+    memory_usage: Optional[float] = None  # ratio 0..1
+    device: Optional[str] = None
+    trained: Optional[bool] = None
+    class Config:
+        allow_population_by_field_name = True
+        allow_population_by_alias = True
+    @root_validator(pre=True)
+    def _coalesce_memory_fields(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        if "mem_gb" not in values and "memory_gb" in values:
+            values["mem_gb"] = values.get("memory_gb")
+        return values
+
+class ResultAssets(BaseModel):
+    annotated_image_s3_key: Optional[str] = None
+    vehicle_image_s3_key: Optional[str] = None
+    plate_image_s3_key: Optional[str] = None
+    annotated_url: Optional[str] = None
+    vehicle_url: Optional[str] = None
+    plate_url: Optional[str] = None
+
+class EngineResult(BaseModel):
+    type: Optional[str] = None
+    type_conf: Optional[float] = None
+    make: Optional[str] = None
+    make_conf: Optional[float] = None
+    model: Optional[str] = None
+    model_conf: Optional[float] = None
+    parts: Optional[Dict[str, Any]] = None
+    thresholds: Dict[str, Any] = Field(default_factory=dict)
+    below_threshold: Dict[str, Any] = Field(default_factory=dict)
+    evidence: Optional[Dict[str, Any]] = None
+    plate_text: Optional[str] = None
+    plate_conf: Optional[float] = None
+    plate_box: Optional[List[float]] = None
+    plate_candidates: Optional[List[Dict[str, Any]]] = None
+    colors: List[ColorFBL] = Field(default_factory=list)
+    metrics: Optional[AnalysisMetrics] = None
+    assets: Optional[ResultAssets] = None
+    status: Optional[str] = None
+    error_msg: Optional[str] = None
+
+# Helpers
+
+def coerce_fbl_colors(payload: Dict[str, Any]) -> List[ColorFBL]:
+    raw = payload.get("colors", [])
+    fbl_list: List[ColorFBL] = []
+    def _as_fbl(item: Any) -> Optional[ColorFBL]:
+        if not isinstance(item, dict):
+            return None
+        if any(k in item for k in ("finish", "base", "lightness", "conf")):
+            return ColorFBL(**{
+                "finish": item.get("finish"),
+                "base": item.get("base"),
+                "lightness": item.get("lightness"),
+                "conf": float(item.get("conf", 0.0) or 0.0),
+            })
+        if "hex" in item or "p" in item:
+            return ColorFBL(finish=None, base=None, lightness=None, conf=float(item.get("p") or 0.0))
+        return None
+    for it in raw if isinstance(raw, list) else []:
+        f = _as_fbl(it)
+        if f:
+            fbl_list.append(f)
+    return fbl_list
+
+__all__ = [
+    "ContractError",
+    "parse_analyze_image_message",
+    "parse_snapshot_ready",
+    "ColorFBL",
+    "AnalysisMetrics",
+    "ResultAssets",
+    "EngineResult",
+    "coerce_fbl_colors",
+]
+
+
+

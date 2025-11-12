@@ -1,4 +1,3 @@
-# ── utils_runtime.py 
 # File: api/analysis/utils_runtime.py
 # -*- coding: utf-8 -*-
 """

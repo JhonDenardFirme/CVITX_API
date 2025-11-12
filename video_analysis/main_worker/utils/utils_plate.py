@@ -1,4 +1,3 @@
-# ── utils_plate.py 
 # api/analysis/utils_plate.py
 """
 CVITX · Plate Utils (EC2 ↔ Colab parity)

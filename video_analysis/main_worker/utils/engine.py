@@ -1,4 +1,3 @@
-# ── engine.py 
 
 # ======================= START OF EC2 CODE ENGINE (REWRITTEN — Phase-A Stable, Phase-9 Keys, SSOT-Aligned + Alias Hooks) =======================
 # Rewriter notes:

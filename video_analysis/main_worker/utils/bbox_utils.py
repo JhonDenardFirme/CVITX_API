@@ -1,4 +1,4 @@
-# ── bbox_utils.py # api/analysis/bbox_utils.py
+# api/analysis/bbox_utils.py
 # Final unified version (V3) — Colab-aligned, engine-compatible
 from __future__ import annotations
 from typing import Tuple, List, Dict, Optional, Iterable, Any

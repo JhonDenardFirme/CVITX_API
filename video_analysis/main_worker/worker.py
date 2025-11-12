@@ -1,527 +1,352 @@
-from video_analysis.main_worker.utils import engine as E  # local engine copy
-# File: /home/ubuntu/cvitx/video_analysis/main_worker/worker.py
+# file: video_analysis/main_worker/worker.py
+# -*- coding: utf-8 -*-
 """
-CVITX · Video Analysis Monorepo — Main-Model Worker
-Directory: /home/ubuntu/cvitx/video_analysis/main_worker
-Filename : worker.py
+CVITX · Video Analysis — main_worker (CMT)
+Consumes SNAPSHOT_READY messages, runs the real CMT engine, writes DB rows and artifacts.
 
-Role
-----
-Consume SNAPSHOT_READY → run main model (Type→Make→Model; optional Color/Plate) →
-write image_analyses + image_analysis_results (Baseline and/or CMT variants) →
-upload artifacts (vehicle.jpg, annotated.jpg[, plate.jpg]) → ACK SQS.
-
-Determinism & Contracts (locked)
---------------------------------
-• Inbound message (validated): SNAPSHOT_READY
-  {
-    "event": "SNAPSHOT_READY",
-    "video_id": "UUID",
-    "workspace_id": "UUID",
-    "workspace_code": "CTX1005",
-    "camera_code": "CAM1",
-    "track_id": 305,
-    "snapshot_s3_key": "s3://cvitx-uploads-dev-jdfirme/demo_user/<wid>/<vid>/snapshots/CTX1005_CAM1_000305_002272.jpg",
-    "recordedAt": null,
-    "detectedIn": 2272,
-    "detectedAt": null,
-    "yolo_type": "SUV"
-  }
-
-• Parent DB row: image_analyses
-  - id (UUID) is returned by create_image_analysis(snapshot_s3_key, workspace_id)
-  - UNIQUE(snapshot_s3_key)
-
-• Child DB rows: image_analysis_results (one per variant)
-  - UNIQUE(analysis_id, variant)
-  - Required fields we upsert in result_dict (keys are stable, FE already consumes):
-    {
-      "variant": "baseline" | "cmt",
-      "type_label": str | null, "type_conf": float | null,
-      "make_label": str | null, "make_conf": float | null,
-      "model_label": str | null, "model_conf": float | null,
-      "colors": [{"finish": null|"Matte"|"Metallic", "base": "White", "lightness": "Light"|null, "conf": float}] | [],
-      "plate_text": str | null, "plate_conf": float | null,
-      "assets": {
-        "vehicle_image_s3_key": str,
-        "annotated_image_s3_key": str,
-        "plate_image_s3_key": str | null
-      },
-      "latency_ms": int,
-      "memory_gb": float | null,
-      "status": "done"
-    }
-
-• Artifacts S3 layout (AID-based; modern layout):
-  s3://{S3_BUCKET}/{workspace_id}/{analysis_id}/{variant}/vehicle.jpg
-  s3://{S3_BUCKET}/{workspace_id}/{analysis_id}/{variant}/annotated.jpg
-  s3://{S3_BUCKET}/{workspace_id}/{analysis_id}/{variant}/plates/plate.jpg  (optional)
-
-================================================================================
-🟡 AWS SETUP REMINDER (once per environment)
-   • S3 bucket must exist: s3://cvitx-uploads-dev-jdfirme
-   • SQS queue must exist:
-       - Snapshot tasks : https://sqs.ap-southeast-2.amazonaws.com/118730128890/cvitx-snapshot-tasks
-     with a DLQ + RedrivePolicy (maxReceiveCount≈5), VisibilityTimeout≈300s, LongPolling=10s
-   • IAM role for this service needs:
-       - s3:GetObject on demo_user/*/snapshots/*
-       - s3:PutObject on */*/*/{baseline,cmt}/*  (AID-based results layout)
-       - sqs:ReceiveMessage/DeleteMessage/ChangeMessageVisibility on snapshot-tasks
-   • Systemd ExecStart should be:
-       /home/ubuntu/cvitx/api/.venv/bin/python -m video_analysis.main_worker.worker
-================================================================================
+Key properties:
+• Uses the same engine path as image workers: from api.analysis import engine as E
+• Model bundle loading is ENV-driven: CMT_BUNDLE_PATH points to a DIRECTORY
+  with label_maps.json + *.pt (no hard-coded bundle paths in code)
+• Real S3 image bytes → E.run_inference(...) → write results & artifacts
+• Preserves the video_analyses / video_analysis_results schema and logic
+• Normalizes DB URL scheme if needed (postgresql+psycopg2:// → postgresql://)
 """
 
-from __future__ import annotations
+import io, json, time, uuid, logging, traceback
+from typing import Any, Dict, Tuple, Optional
+from urllib.parse import urlparse
 
-import io
-import json
-import os
-import time
-import math
-import threading
-from typing import Any, Dict, List, Optional, Tuple
+import boto3
+import psycopg2, psycopg2.extras
+from PIL import Image
 
-import cv2
-import numpy as np
+from video_analysis.worker_config import CONFIG, config_summary
+from video_analysis.main_worker.utils.contracts import parse_snapshot_ready
 
-try:
-    import torch
-except Exception:  # pragma: no cover
-    torch = None  # Allows dry-run without torch installed (results become fallback)
+# ----------------------------------------------------------------
+# (AUTHORIZED CHANGE) CONFIG → ENV bridge for engine behavior parity
+# ----------------------------------------------------------------
+import os as _os
 
-from video_analysis.worker_config import CONFIG, BUNDLES, s3_uri
-from video_analysis.worker_utils.common import (
-    # logging
-    log,
-    # validators
-    validate_snapshot_ready,
-    # aws
-    get_s3,
-    get_sqs,
-    # db
-    create_image_analysis,
-    upsert_results,
+# Snapshot/image size
+if "SNAPSHOT_SIZE" in CONFIG:
+    _os.environ.setdefault("IMG_SIZE", str(int(CONFIG["SNAPSHOT_SIZE"])) )
+
+# Feature toggles
+_os.environ.setdefault("ENABLE_COLOR", "1" if CONFIG.get("ENABLE_COLOR", True) else "0")
+_os.environ.setdefault("ENABLE_PLATE", "1" if CONFIG.get("ENABLE_PLATE", True) else "0")
+
+# On-disk bundle directory (REQUIRED for trained weights)
+_os.environ.setdefault("CMT_BUNDLE_PATH", "/home/ubuntu/cvitx/video_analysis/main_worker/bundle/cmt_dir")
+
+# Optional thresholds/temperatures (keep consistent with CONFIG if applicable)
+_os.environ.setdefault("TAU_TYPE", "0.70")
+_os.environ.setdefault("TAU_MAKE", "0.70")
+_os.environ.setdefault("TAU_MODEL", "0.70")
+_os.environ.setdefault("TEMP_TYPE", "1.00")
+_os.environ.setdefault("TEMP_MAKE", "1.00")
+_os.environ.setdefault("TEMP_MODEL", "1.00")
+
+# ---- logging ----------------------------------------------------
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("cvitx.video.main")
+
+# ---- aws clients ------------------------------------------------
+REGION = CONFIG["AWS_REGION"]
+BUCKET = CONFIG["S3_BUCKET"]
+s3  = boto3.client("s3", region_name=REGION)
+sqs = boto3.client("sqs", region_name=REGION)
+Q_SNAPSHOT = CONFIG["SQS_SNAPSHOT_QUEUE_URL"]
+
+# ---- db ---------------------------------------------------------
+# Normalize DB URL for psycopg2 if it uses sqlalchemy-style scheme
+DB_URL = CONFIG["DB_URL"]
+if DB_URL and DB_URL.startswith("postgresql+psycopg2://"):
+    DB_URL = DB_URL.replace("postgresql+psycopg2://", "postgresql://", 1)
+
+def _connect():
+    if not DB_URL:
+        raise RuntimeError("DB_URL is required for video worker.")
+    return psycopg2.connect(DB_URL)
+
+# ---- s3 helpers -------------------------------------------------
+
+def _norm_uri(s: str) -> str:
+    return s if s.startswith("s3://") else f"s3://{s}"
+
+def _bucket_key(uri_or_key: str) -> Tuple[str, str]:
+    p = urlparse(_norm_uri(uri_or_key))
+    return p.netloc, p.path.lstrip("/")
+
+def _jpeg_bytes(img: Image.Image, q: int = 95) -> bytes:
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, format="JPEG", quality=q)
+    return buf.getvalue()
+
+# ---- engine (ENV-driven, parity with image worker) --------------
+# IMPORTANT: use the same engine as image workers; it reads CMT_BUNDLE_PATH (DIRECTORY)
+from api.analysis import engine as E
+
+# ---- sql (video lane, independent) ------------------------------
+CREATE_SQL = """
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+CREATE TABLE IF NOT EXISTS video_analyses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID NOT NULL,
+  video_id UUID NOT NULL,
+  snapshot_s3_key TEXT UNIQUE NOT NULL,
+  source_kind TEXT NOT NULL DEFAULT 'snapshot',
+  status TEXT NOT NULL DEFAULT 'processing',   -- 'processing' | 'done' | 'error'
+  error_msg TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS video_analysis_results (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  analysis_id UUID NOT NULL REFERENCES video_analyses(id) ON DELETE CASCADE,
+  variant TEXT NOT NULL,                        -- 'main' (CMT)
+  type_label TEXT, type_conf DOUBLE PRECISION,
+  make_label TEXT, make_conf DOUBLE PRECISION,
+  model_label TEXT, model_conf DOUBLE PRECISION,
+  plate_text TEXT, plate_conf DOUBLE PRECISION,
+  colors JSONB,                                 -- FBL array
+  assets JSONB,                                 -- {vehicle_image_s3_key, annotated_image_s3_key, plate_image_s3_key}
+  latency_ms INTEGER,
+  memory_gb DOUBLE PRECISION,
+  status TEXT NOT NULL DEFAULT 'done',
+  error_msg TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (analysis_id, variant)
+);
+
+CREATE INDEX IF NOT EXISTS ix_video_analyses_ws_vid
+  ON video_analyses (workspace_id, video_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_video_analyses_snapshot
+  ON video_analyses (snapshot_s3_key);
+
+CREATE INDEX IF NOT EXISTS ix_video_results_analysis_variant
+  ON video_analysis_results (analysis_id, variant);
+"""
+
+UPSERT_SQL = """
+INSERT INTO video_analysis_results AS r (
+  id, analysis_id, variant,
+  type_label, type_conf, make_label, make_conf, model_label, model_conf,
+  plate_text, plate_conf, colors, assets,
+  latency_ms, memory_gb, status, error_msg, updated_at
+) VALUES (
+  %(id)s, %(analysis_id)s, %(variant)s,
+  %(type_label)s, %(type_conf)s, %(make_label)s, %(make_conf)s, %(model_label)s, %(model_conf)s,
+  %(plate_text)s, %(plate_conf)s, %(colors)s, %(assets)s,
+  %(latency_ms)s, %(memory_gb)s, %(status)s, %(error_msg)s, now()
 )
+ON CONFLICT (analysis_id, variant) DO UPDATE SET
+  type_label=EXCLUDED.type_label, type_conf=EXCLUDED.type_conf,
+  make_label=EXCLUDED.make_label, make_conf=EXCLUDED.make_conf,
+  model_label=EXCLUDED.model_label, model_conf=EXCLUDED.model_conf,
+  plate_text=EXCLUDED.plate_text, plate_conf=EXCLUDED.plate_conf,
+  colors=EXCLUDED.colors, assets=EXCLUDED.assets,
+  latency_ms=EXCLUDED.latency_ms, memory_gb=EXCLUDED.memory_gb,
+  status=EXCLUDED.status, error_msg=EXCLUDED.error_msg, updated_at=now();
+"""
 
+# ---- bootstrap --------------------------------------------------
 
-# ============================== Utilities ================================== #
-
-def _parse_s3_uri(uri: str) -> Tuple[str, str]:
-    """Split 's3://bucket/key' to (bucket, key)."""
-    if not uri.startswith("s3://"):
-        raise ValueError(f"Expected s3:// URI, got: {uri}")
-    no_scheme = uri[len("s3://"):]
-    parts = no_scheme.split("/", 1)
-    if len(parts) != 2:
-        raise ValueError(f"Malformed S3 URI: {uri}")
-    return parts[0], parts[1]
-
-
-def _jpeg_bytes_to_cv2(img_bytes: bytes) -> np.ndarray:
-    arr = np.frombuffer(img_bytes, dtype=np.uint8)
-    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    if img is None:
-        raise RuntimeError("cv2.imdecode returned None for snapshot bytes")
-    return img
-
-
-def _ensure_3ch(img: np.ndarray) -> np.ndarray:
-    if img.ndim == 2:
-        return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-    return img
-
-
-def _to_tensor(img_bgr: np.ndarray, size: int = 640, rgb: bool = True) -> "torch.Tensor":
-    """Resize/letterbox to size×size, BGR→RGB optionally, [0,1], CHW, float32."""
-    H, W = img_bgr.shape[:2]
-    if H != size or W != size:
-        img_bgr = cv2.resize(img_bgr, (size, size), interpolation=cv2.INTER_LINEAR)
-    img = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB) if rgb else img_bgr
-    arr = img.astype(np.float32) / 255.0
-    chw = np.transpose(arr, (2, 0, 1))
-    t = torch.from_numpy(chw).unsqueeze(0)  # [1,3,H,W]
-    return t
-
-
-def _device() -> str:
-    # Prefer explicit CONFIG key; otherwise auto-select
-    explicit = str(CONFIG.get("MAIN_DEVICE") or "").strip().lower()
-    if explicit:
-        return explicit
-    if torch is not None and torch.cuda.is_available():
-        return "cuda"
-    return "cpu"
-
-
-def _gpu_mem_gb_or_none() -> Optional[float]:
-    if torch is None or not torch.cuda.is_available():
-        return None
-    try:
-        bytes_used = torch.cuda.max_memory_allocated()  # peak since reset
-        return round(bytes_used / (1024**3), 3)
-    except Exception:
-        return None
-
-
-# ============================== Model Loading =============================== #
-
-_BASELINE_MODEL = None
-_CMT_MODEL = None
-_MODEL_INPUT_RGB = True  # assume model expects RGB; change here if needed
-
-
-def _try_load_model(path: Optional[str]) -> Optional[Any]:
-    if not path:
-        return None
-    if not os.path.exists(path):
-        log.error(f"[model] path not found: {path}")
-        return None
-    if torch is None:
-        log.warning("[model] torch not available; running in fallback mode")
-        return None
-    try:
-        # Prefer torch.jit (most portable), fallback to torch.load
-        try:
-            mdl = torch.jit.load(path, map_location=_device())
-            mdl.eval()
-            return mdl
-        except Exception:
-            checkpoint = torch.load(path, map_location=_device())
-            if hasattr(checkpoint, "eval"):
-                checkpoint.eval()
-                return checkpoint
-            # If checkpoint is a state_dict, user must wrap their model loader.
-            log.error("[model] state_dict provided, but no architecture to load it into.")
-            return None
-    except Exception as e:
-        log.error(f"[model] failed to load {path}: {e}")
-        return None
-
-
-def _load_models_once() -> None:
-    global _BASELINE_MODEL, _CMT_MODEL
-    if _BASELINE_MODEL is None:
-        base_path = (
-            BUNDLES.get("BASELINE_WEIGHTS")
-            or BUNDLES.get("MAIN_WEIGHTS")
-            or BUNDLES.get("BASELINE_BUNDLE_PATH")
-        )
-        if base_path:
-            log.info(f"[model] loading baseline: {base_path}")
-        _BASELINE_MODEL = _try_load_model(base_path)
-    if _CMT_MODEL is None:
-        cmt_path = BUNDLES.get("CMT_WEIGHTS") or BUNDLES.get("CMT_BUNDLE_PATH")
-        if cmt_path:
-            log.info(f"[model] loading cmt: {cmt_path}")
-        _CMT_MODEL = _try_load_model(cmt_path)
-
-
-# ============================== Inference Core ============================== #
-
-def _forward_any(model: Any, tensor: "torch.Tensor") -> Dict[str, Any]:
-    """
-    Call user model. Expect either:
-      • returns dict with keys {type, make, model} -> each a dict {label, conf}
-      • or returns tuple/list of logits we can't parse (then fallback)
-    This keeps the worker generic while still deterministic.
-    """
-    try:
-        with torch.no_grad():
-            out = model(tensor.to(_device()))
-        # Heuristic: if dict-like with expected shape, use it
-        if isinstance(out, dict):
-            t = out.get("type") or {}
-            m = out.get("make") or {}
-            mm = out.get("model") or {}
-            return {
-                "type_label": t.get("label"),
-                "type_conf": float(t.get("conf")) if t.get("conf") is not None else None,
-                "make_label": m.get("label"),
-                "make_conf": float(m.get("conf")) if m.get("conf") is not None else None,
-                "model_label": mm.get("label"),
-                "model_conf": float(mm.get("conf")) if mm.get("conf") is not None else None,
-            }
-        # Unknown shape → fallback
-        log.warning("[infer] model returned non-dict; using fallback parser")
-        return {}
-    except Exception as e:
-        log.error(f"[infer] model forward failed: {e}")
-        return {}
-
-
-def _estimate_color_fbl(img_bgr: np.ndarray) -> List[Dict[str, Any]]:
-    """
-    Tiny deterministic color estimate:
-      - Compute mean in HSV; map hue to coarse base; lightness from V.
-    This is stable and fast, not ML. You can replace with your color head later.
-    """
-    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
-    mean = hsv.reshape(-1, 3).mean(axis=0)
-    H, S, V = mean.tolist()
-    # Base mapping (very coarse)
-    if V > 220 and S < 30:
-        base = "White"
-    elif V < 50:
-        base = "Black"
-    elif 10 <= H < 25:
-        base = "Orange"
-    elif 25 <= H < 40:
-        base = "Yellow"
-    elif 40 <= H < 85:
-        base = "Green"
-    elif 85 <= H < 130:
-        base = "Cyan"
-    elif 130 <= H < 170:
-        base = "Blue"
-    elif 170 <= H < 185:
-        base = "Purple"
-    elif H < 10 or H >= 185:
-        base = "Red"
-    else:
-        base = "Gray"
-    lightness = "Light" if V >= 160 else (None if 80 <= V < 160 else None)
-    finish = None  # Unknown
-    conf = 0.66
-    return [{"finish": finish, "base": base, "lightness": lightness, "conf": conf}]
-
-
-def _variant_result_dict(
-    variant: str,
-    img_bgr: np.ndarray,
-    infer_out: Dict[str, Any],
-    vehicle_key: str,
-    annotated_key: str,
-    plate_key: Optional[str],
-    latency_ms: int,
-) -> Dict[str, Any]:
-    colors: List[Dict[str, Any]] = []
-    if str(CONFIG.get("ENABLE_COLOR", "0")) not in ("0", "false", "False", "", "no"):
-        try:
-            colors = _estimate_color_fbl(img_bgr)
-        except Exception as e:
-            log.error(f"[color] estimation failed: {e}")
-            colors = []
-
-    mem_gb = _gpu_mem_gb_or_none()
-
-    return {
-        "variant": variant,
-        "type_label": infer_out.get("type_label"),
-        "type_conf": infer_out.get("type_conf"),
-        "make_label": infer_out.get("make_label"),
-        "make_conf": infer_out.get("make_conf"),
-        "model_label": infer_out.get("model_label"),
-        "model_conf": infer_out.get("model_conf"),
-        "colors": colors,
-        "plate_text": None,   # set by optional plate pipeline
-        "plate_conf": None,
-        "assets": {
-            "vehicle_image_s3_key": vehicle_key,
-            "annotated_image_s3_key": annotated_key,
-            "plate_image_s3_key": plate_key,
-        },
-        "latency_ms": int(latency_ms),
-        "memory_gb": mem_gb,
-        "status": "done",
-    }
-
-
-# ============================== Worker Logic ================================ #
-
-class Heartbeat(threading.Thread):
-    """SQS visibility heartbeat while processing a long analysis."""
-    def __init__(self, receipt_handle: str, queue_url: str):
-        super().__init__(daemon=True)
-        self.receipt_handle = receipt_handle
-        self.queue_url = queue_url
-        self.stop_flag = threading.Event()
-
-    def run(self) -> None:
-        sqs = get_sqs()
-        vis = int(CONFIG["SQS_VIS_TIMEOUT"])
-        hb = int(CONFIG["SQS_HEARTBEAT_SEC"])
-        while not self.stop_flag.wait(timeout=hb):
+def _ensure_tables():
+    with _connect() as conn:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            # (AUTHORIZED CHANGE) be resilient if pgcrypto creation is not permitted
             try:
-                sqs.change_message_visibility(
-                    QueueUrl=self.queue_url,
-                    ReceiptHandle=self.receipt_handle,
-                    VisibilityTimeout=vis,
-                )
-                log.info("[hb] extended visibility")
-            except Exception as e:
-                log.error(f"[hb] change_message_visibility failed: {e}")
+                cur.execute('CREATE EXTENSION IF NOT EXISTS "pgcrypto";')
+            except Exception:
+                log.warning("pgcrypto_extension_skipped_or_forbidden")
+            cur.execute(CREATE_SQL.replace('CREATE EXTENSION IF NOT EXISTS "pgcrypto";\n', ''))
 
-    def stop(self) -> None:
-        self.stop_flag.set()
+def _create_analysis(workspace_id: str, video_id: str, snapshot_uri: str) -> str:
+    with _connect() as conn:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO video_analyses (workspace_id, video_id, snapshot_s3_key, status) VALUES (%s,%s,%s,'processing') RETURNING id",
+                (workspace_id, video_id, snapshot_uri)
+            )
+            return str(cur.fetchone()[0])
 
+def _mark_status(analysis_id: str, status: str, err: Optional[str] = None):
+    with _connect() as conn:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE video_analyses SET status=%s, error_msg=%s, updated_at=now() WHERE id=%s",
+                (status, err, analysis_id)
+            )
 
-def _download_snapshot_bytes(snapshot_uri: str) -> bytes:
-    bucket, key = _parse_s3_uri(snapshot_uri)
-    s3 = get_s3()
-    log.info(f"[s3] get_object {snapshot_uri}")
-    obj = s3.get_object(Bucket=bucket, Key=key)
-    return obj["Body"].read()
+# ---- artifacts --------------------------------------------------
 
+def _save_artifacts(aid: str, wid: str, pil: Image.Image, dets: Dict[str, Any]) -> Dict[str,str]:
+    out = {}
+    prefix = f"{wid}/{aid}/main/"
+    try:
+        try:
+            # Reuse image worker helpers when present
+            from api.workers.image_worker_baseline import _draw_anno, _crop  # type: ignore
+        except Exception:
+            _draw_anno = lambda im, d: im  # no-op fallback
+            def _crop(im, box):
+                if not box: return None
+                x1,y1,x2,y2 = map(int, map(round, box))
+                x1 = max(0, min(x1, im.width-1))
+                y1 = max(0, min(y1, im.height-1))
+                x2 = max(x1+1, min(x2, im.width))
+                y2 = max(y1+1, min(y2, im.height))
+                return im.crop((x1,y1,x2,y2))
 
-def _upload_artifact_bytes(key: str, data: bytes) -> str:
-    s3 = get_s3()
-    bucket = str(CONFIG["S3_BUCKET"])
-    s3.put_object(Bucket=bucket, Key=key, Body=data, ContentType="image/jpeg")
-    return s3_uri(key)
+        anno = _draw_anno(pil, dets)
+        s3.put_object(Bucket=BUCKET, Key=prefix+"annotated.jpg", Body=_jpeg_bytes(anno), ContentType="image/jpeg")
+        out["annotated_image_s3_key"] = prefix+"annotated.jpg"
 
+        if dets.get("veh_box"):
+            veh = _crop(pil, dets["veh_box"])
+            if veh:
+                s3.put_object(Bucket=BUCKET, Key=prefix+"vehicle.jpg", Body=_jpeg_bytes(veh), ContentType="image/jpeg")
+                out["vehicle_image_s3_key"] = prefix+"vehicle.jpg"
 
-def _maybe_run_variant(variant: str, model: Optional[Any], img_bgr: np.ndarray) -> Dict[str, Any]:
-    """Run a variant if model exists; otherwise fallback uses yolo_type later."""
-    if model is None or torch is None:
-        return {}
-    t = _to_tensor(img_bgr, size=640, rgb=_MODEL_INPUT_RGB)
-    t = t if _device() == "cpu" else t.to(_device(), non_blocking=True)
-    t0 = time.time()
-    out = _forward_any(model, t)
-    latency_ms = int((time.time() - t0) * 1000)
-    out["_latency_ms"] = latency_ms
+        if dets.get("plate_box"):
+            plc = _crop(pil, dets["plate_box"])
+            if plc:
+                s3.put_object(Bucket=BUCKET, Key=prefix+"plate.jpg", Body=_jpeg_bytes(plc), ContentType="image/jpeg")
+                out["plate_image_s3_key"] = prefix+"plate.jpg"
+    except Exception as e:
+        log.warning("artifact_failed: %s", e)
     return out
 
+# ---- main processing --------------------------------------------
 
-def _process_one_snapshot(body: Dict[str, Any]) -> int:
-    """
-    Process a single SNAPSHOT_READY message.
-    Returns number of result rows written (1 for baseline-only, 2 if baseline+cmt).
-    """
-    payload = validate_snapshot_ready(body)
+def _process_one(msg_body: Dict[str, Any]):
+    # 1) Validate SNAPSHOT_READY
+    snap = parse_snapshot_ready(json.dumps(msg_body))
+    wid = snap["workspace_id"]
+    vid = snap["video_id"]
+    bkt, key = _bucket_key(snap["snapshot_s3_key"])
 
-    # 1) Fetch snapshot
-    snapshot_uri = str(payload["snapshot_s3_key"])
-    raw_bytes = _download_snapshot_bytes(snapshot_uri)
-    img_bgr = _ensure_3ch(_jpeg_bytes_to_cv2(raw_bytes))
+    # 2) Create analysis row tied to video
+    aid = _create_analysis(wid, vid, f"s3://{bkt}/{key}")
 
-    # 2) Create parent image_analysis row (idempotent behavior implemented server-side)
-    analysis_id = create_image_analysis(snapshot_s3_key=snapshot_uri, workspace_id=str(payload["workspace_id"]))
+    # 3) Download image and run inference (CMT as main)
+    obj = s3.get_object(Bucket=bkt, Key=key)
+    img_bytes = obj["Body"].read()
 
-    # 3) Build artifact keys (AID-based, per variant)
-    wid = str(payload["workspace_id"])
-    base_prefix = f"{wid}/{analysis_id}"
+    # Engine: warm or on-demand load of env-driven CMT bundle (DIRECTORY)
+    try:
+        if hasattr(E, "load_model"):
+            E.load_model("cmt")
+    except Exception as e:
+        log.warning("[warm] load failed (continuing, will retry if needed): %s", e)
 
-    # 4) Decide variants
-    variants: List[Tuple[str, Optional[Any]]] = []
-    if _BASELINE_MODEL is not None:
-        variants.append(("baseline", _BASELINE_MODEL))
-    if _CMT_MODEL is not None:
-        variants.append(("cmt", _CMT_MODEL))
-    if not variants:
-        # Run baseline "fallback" so UI still shows something
-        variants.append(("baseline", None))
+    dets, timings, metrics = E.run_inference(img_bytes, variant="cmt", analysis_id=f"vid_{aid}")
 
-    # 5) For each variant: run inference, upload artifacts, upsert result
-    written = 0
-    for variant, model in variants:
-        # Inference (or fallback)
-        infer_out = _maybe_run_variant(variant, model, img_bgr)
-        latency_ms = infer_out.pop("_latency_ms", 0)
+    # 4) Optional artifacts
+    assets = {}
+    try:
+        pil = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+        assets = _save_artifacts(aid, wid, pil, dets)
+    except Exception as e:
+        log.warning("artifact_io: %s", e)
 
-        # Fallbacks for labels if model didn't return
-        if not infer_out.get("type_label"):
-            infer_out["type_label"] = str(payload.get("yolo_type") or "Car")
-            infer_out["type_conf"] = 0.99
-        infer_out.setdefault("make_label", None)
-        infer_out.setdefault("make_conf", None)
-        infer_out.setdefault("model_label", None)
-        infer_out.setdefault("model_conf", None)
+    # 5) Normalize payload (FBL colors already list)
+    colors_fbl = dets.get("colors") or []
+    payload = {
+        "id": str(uuid.uuid4()),
+        "analysis_id": aid,
+        "variant": "main",
+        "type_label": dets.get("type"),
+        "type_conf": dets.get("type_conf"),
+        "make_label": dets.get("make"),
+        "make_conf": dets.get("make_conf"),
+        "model_label": dets.get("model"),
+        "model_conf": dets.get("model_conf"),
+        "plate_text": dets.get("plate_text"),
+        "plate_conf": dets.get("plate_conf"),
+        "colors": json.dumps(colors_fbl[:3]),
+        "assets": json.dumps(assets),
+        "latency_ms": int((metrics.get("latency_ms") or timings.get("total") or 0.0)),
+        "memory_gb": metrics.get("mem_gb") or metrics.get("memory_gb"),
+        "status": "done",
+        "error_msg": None,
+    }
 
-        # Artifacts: for now reuse the snapshot for both vehicle.jpg and annotated.jpg
-        # (Deterministic; you can replace annotated with overlays later.)
-        vehicle_key = f"{base_prefix}/{variant}/vehicle.jpg"
-        annotated_key = f"{base_prefix}/{variant}/annotated.jpg"
-        plate_key: Optional[str] = None
+    # 6) UPSERT results and mark parent done
+    with _connect() as conn:
+        conn.autocommit = True
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(UPSERT_SQL, payload)
+        _mark_status(aid, "done")
 
-        _upload_artifact_bytes(vehicle_key, raw_bytes)
-        _upload_artifact_bytes(annotated_key, raw_bytes)
+    log.info("[upsert] aid=%s variant=main type=%s make=%s model=%s | %s",
+             aid, payload["type_label"], payload["make_label"], payload["model_label"], config_summary())
 
-        # (Optional) plate OCR pipeline — disabled by default to keep worker self-contained.
-        # If you later enable it, write the plate.jpg and set plate_key accordingly.
+# ---- daemon loop ------------------------------------------------
 
-        # Assemble row
-        row = _variant_result_dict(
-            variant=variant,
-            img_bgr=img_bgr,
-            infer_out=infer_out,
-            vehicle_key=vehicle_key,
-            annotated_key=annotated_key,
-            plate_key=plate_key,
-            latency_ms=latency_ms,
-        )
+def main():
+    log.info("[boot] video main-model worker starting… region=%s bucket=%s queue=%s | %s",
+             REGION, BUCKET, Q_SNAPSHOT, config_summary())
+    _ensure_tables()
 
-        # UPSERT
-        upsert_results(analysis_id=analysis_id, variant=variant, result_dict=row)
-        written += 1
+    # Preload bundle once (best-effort, env-driven directory)
+    try:
+        if hasattr(E, "load_model"):
+            E.load_model("cmt")
+            log.info("[warm] CMT model loaded (env-driven bundle).")
+    except Exception as e:
+        log.warning("[warm] initial load failed (lazy on-demand): %s", e)
 
-    log.info(f"[ok] analysis_id={analysis_id} variants_written={written}")
-    return written
-
-
-# ================================ SQS Poller =============================== #
-
-def _receive_loop() -> None:
-    sqs = get_sqs()
-    qurl = str(CONFIG["SQS_SNAPSHOT_QUEUE_URL"])
-    wait = int(CONFIG["RECEIVE_WAIT_TIME_SEC"])
-    vis = int(CONFIG["SQS_VIS_TIMEOUT"])
-
-    log.info(f"[boot] main_worker ready — queue={qurl} wait={wait}s vis={vis}s :: {CONFIG['AWS_REGION']}")
+    if not Q_SNAPSHOT:
+        log.error("No SQS_SNAPSHOT_QUEUE_URL configured in code.")
+        return
 
     while True:
         try:
-            resp = sqs.receive_message(
-                QueueUrl=qurl,
+            r = sqs.receive_message(
+                QueueUrl=Q_SNAPSHOT,
                 MaxNumberOfMessages=1,
-                WaitTimeSeconds=wait,
-                VisibilityTimeout=vis,
+                WaitTimeSeconds=CONFIG["RECEIVE_WAIT_TIME_SEC"],
+                VisibilityTimeout=CONFIG["SQS_VIS_TIMEOUT"],
+                AttributeNames=["All"],
             )
-            msgs = resp.get("Messages", [])
+            msgs = r.get("Messages", [])
             if not msgs:
                 continue
-
-            msg = msgs[0]
-            receipt = msg["ReceiptHandle"]
-            body_raw = msg["Body"]
+            m = msgs[0]
+            receipt = m["ReceiptHandle"]
+            body = json.loads(m["Body"]) if isinstance(m.get("Body"), str) else m.get("Body", {})
             try:
-                body = json.loads(body_raw)
-            except json.JSONDecodeError:
-                log.error("[recv] invalid JSON body; deleting")
-                sqs.delete_message(QueueUrl=qurl, ReceiptHandle=receipt)
-                continue
-
-            hb = Heartbeat(receipt_handle=receipt, queue_url=qurl)
-            hb.start()
-
-            try:
-                written = _process_one_snapshot(body)
-                # Success → delete message
-                sqs.delete_message(QueueUrl=qurl, ReceiptHandle=receipt)
-                log.info(f"[ack] wrote {written} result row(s)")
+                _process_one(body)
             except Exception as e:
-                log.error(f"[err] processing failed: {e}", exc_info=True)
-                # Do NOT delete → allow DLQ via RedrivePolicy
-            finally:
-                hb.stop()
-
-        except Exception as outer:
-            log.error(f"[loop] receive/process error: {outer}", exc_info=True)
-            time.sleep(2.0)  # small backoff
-
-
-# ================================ Entrypoint =============================== #
-
-def main() -> None:
-    _load_models_once()
-    if torch is not None and torch.cuda.is_available():
-        try:
-            torch.cuda.reset_peak_memory_stats()
-        except Exception:
-            pass
-    _receive_loop()
-
+                log.error("[error] process failed: %s", e)
+                log.debug(traceback.format_exc())
+                sqs.change_message_visibility(QueueUrl=Q_SNAPSHOT, ReceiptHandle=receipt, VisibilityTimeout=10)
+                continue
+            sqs.delete_message(QueueUrl=Q_SNAPSHOT, ReceiptHandle=receipt)
+        except KeyboardInterrupt:
+            log.warning("shutdown")
+            break
+        except Exception as e:
+            log.error("[loop] error: %s", e)
+            log.debug(traceback.format_exc())
+            time.sleep(2)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        log.warning("interrupted by user")
+    except Exception as e:
+        log.error("[fatal] %s", e)
+        log.debug(traceback.format_exc())
+        raise

@@ -1,4 +1,3 @@
-# ── utils_color.py 
 # api/analysis/utils_color.py
 """
 CVITX · Color Utils (EC2 ↔ Colab parity, Phase-9 hardened)
