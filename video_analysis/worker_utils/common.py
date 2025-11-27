@@ -1,4 +1,3 @@
-# === START PASTE (worker_utils/common.py) ===
 # file: video_analysis/worker_utils/common.py
 """
 CVITX · Video Analysis Monorepo — Shared Utilities (yolo_worker & main_worker)
@@ -341,6 +340,151 @@ def upsert_results(analysis_id: str, variant: str, result: Dict[str, Any]) -> No
         conn.commit()
 
 
+def create_video_analysis(snapshot_s3_key: str, workspace_id: str, video_id: str) -> str:
+    """
+    Create (or fetch existing) video_analyses row for this snapshot key.
+    Returns the analysis UUID (string).
+
+    This is the video-analysis counterpart to create_image_analysis and is
+    intentionally scoped to the video_analyses table so that video detections
+    never leak into image_analyses.
+    """
+    analysis_id = str(uuid.uuid4())
+    sql = """
+    INSERT INTO video_analyses (
+      id, workspace_id, video_id, snapshot_s3_key, source_kind, status, created_at, updated_at
+    )
+    VALUES (%s, %s, %s, %s, 'snapshot', 'processing', NOW(), NOW())
+    ON CONFLICT (snapshot_s3_key)
+    DO UPDATE SET
+      workspace_id = EXCLUDED.workspace_id,
+      video_id     = EXCLUDED.video_id,
+      updated_at   = EXCLUDED.updated_at
+    RETURNING id::text;
+    """
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(sql, (analysis_id, workspace_id, video_id, snapshot_s3_key))
+        got_id = cur.fetchone()[0]
+        conn.commit()
+        return got_id
+
+
+def upsert_video_results(analysis_id: str, variant: str, result: Dict[str, Any]) -> None:
+    """
+    Upsert a result row into video_analysis_results (UNIQUE(analysis_id, variant)).
+
+    Expected 'result' shape (keys are optional; absent ones become NULL/{}):
+      {
+        "type":  {"label": str, "conf": float},
+        "make":  {"label": str, "conf": float},
+        "model": {"label": str, "conf": float},
+        "plate": {"text": str, "conf": float},
+        "colors": [ {finish|None, base, lightness|None, conf}, ... ],
+        "assets": { "annotated_key": str|None, "vehicle_key": str|None, "plate_key": str|None },
+        "latency_ms": int,
+        "memory_gb": float|None,
+        "status": "done"|"error" (default "done"),
+        "error_msg": str|None
+      }
+    """
+    t = (result.get("type") or {})
+    m = (result.get("make") or {})
+    mm = (result.get("model") or {})
+    p = (result.get("plate") or {})
+    colors = result.get("colors") or []
+    assets = result.get("assets") or {}
+    latency_ms = int(result.get("latency_ms") or 0)
+    memory_gb = result.get("memory_gb")
+    status = result.get("status") or "done"
+    error_msg = result.get("error_msg")
+
+    sql = """
+    INSERT INTO video_analysis_results (
+      analysis_id, variant,
+      type_label,  type_conf,
+      make_label,  make_conf,
+      model_label, model_conf,
+      plate_text,  plate_conf,
+      colors,      assets,
+      latency_ms,  memory_gb,
+      status,      error_msg,
+      created_at,  updated_at
+    )
+    VALUES (
+      %(analysis_id)s, %(variant)s,
+      %(type_label)s,  %(type_conf)s,
+      %(make_label)s,  %(make_conf)s,
+      %(model_label)s, %(model_conf)s,
+      %(plate_text)s,  %(plate_conf)s,
+      %(colors)s,      %(assets)s,
+      %(latency_ms)s,  %(memory_gb)s,
+      %(status)s,      %(error_msg)s,
+      NOW(),           NOW()
+    )
+    ON CONFLICT (analysis_id, variant)
+    DO UPDATE SET
+      type_label  = EXCLUDED.type_label,
+      type_conf   = EXCLUDED.type_conf,
+      make_label  = EXCLUDED.make_label,
+      make_conf   = EXCLUDED.make_conf,
+      model_label = EXCLUDED.model_label,
+      model_conf  = EXCLUDED.model_conf,
+      plate_text  = EXCLUDED.plate_text,
+      plate_conf  = EXCLUDED.plate_conf,
+      colors      = EXCLUDED.colors,
+      assets      = EXCLUDED.assets,
+      latency_ms  = EXCLUDED.latency_ms,
+      memory_gb   = EXCLUDED.memory_gb,
+      status      = EXCLUDED.status,
+      error_msg   = EXCLUDED.error_msg,
+      updated_at  = NOW();
+    """
+
+    params = {
+        "analysis_id": str(analysis_id),
+        "variant": str(variant),
+        "type_label": t.get("label"),
+        "type_conf": float(t.get("conf")) if t.get("conf") is not None else None,
+        "make_label": m.get("label"),
+        "make_conf": float(m.get("conf")) if m.get("conf") is not None else None,
+        "model_label": mm.get("label"),
+        "model_conf": float(mm.get("conf")) if mm.get("conf") is not None else None,
+        "plate_text": p.get("text"),
+        "plate_conf": float(p.get("conf")) if p.get("conf") is not None else None,
+        "colors": PgJson(colors),
+        "assets": PgJson(assets),
+        "latency_ms": int(latency_ms),
+        "memory_gb": float(memory_gb) if memory_gb is not None else None,
+        "status": str(status),
+        "error_msg": str(error_msg) if error_msg is not None else None,
+    }
+
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(sql, params)
+        conn.commit()
+
+
+def set_video_analysis_status(analysis_id: str, status: str, error_msg: Optional[str] = None) -> None:
+    """
+    Update video_analyses.status and optional error_msg for a given analysis.
+    """
+    sql = """
+    UPDATE video_analyses
+    SET status = %(status)s,
+        error_msg = %(error_msg)s,
+        updated_at = NOW()
+    WHERE id::text = %(analysis_id)s;
+    """
+    params = {
+        "analysis_id": str(analysis_id),
+        "status": str(status),
+        "error_msg": str(error_msg) if error_msg is not None else None,
+    }
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(sql, params)
+        conn.commit()
+
+
 # ============================ Key / Path Builders =========================== #
 
 def build_snapshot_key(
@@ -474,6 +618,9 @@ __all__ = [
     "get_video_by_id",
     "create_image_analysis",
     "upsert_results",
+    "create_video_analysis",
+    "upsert_video_results",
+    "set_video_analysis_status",
     # keys
     "build_snapshot_key",
     # imaging
@@ -492,7 +639,3 @@ __all__ = [
     "s3_uri",
 ]
 
-
-
-
-# === END PASTE (worker_utils/common.py) ===
