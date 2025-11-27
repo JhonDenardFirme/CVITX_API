@@ -8,8 +8,13 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
+from pydantic import BaseModel, Field, root_validator, ValidationError
+from video_analysis.worker_utils.common import SnapshotReady
+
+
 class ContractError(Exception):
     pass
+
 
 # ----------------------------- ANALYZE_IMAGE (compat) -----------------------------
 
@@ -30,32 +35,41 @@ def parse_analyze_image_message(body: str) -> Dict[str, Any]:
         raise ContractError("Missing input source: need one of ['input_image_s3_uri'|'s3_uri'|'input_s3_key'].")
     return d
 
-# ----------------------------- SNAPSHOT_READY (new) -----------------------------
+
+# ----------------------------- SNAPSHOT_READY (strict, canonical-backed) -----------------------------
 
 def parse_snapshot_ready(body: str) -> Dict[str, Any]:
+    """
+    Strict SNAPSHOT_READY parser.
+
+    • Decodes JSON body.
+    • Validates against the canonical SnapshotReady Pydantic model
+      (same one used by workers via validate_snapshot_ready).
+    • Raises ContractError on any shape/regex mismatch.
+    """
     try:
-        d = json.loads(body)
+        raw = json.loads(body)
     except Exception as e:
         raise ContractError(f"Invalid JSON: {e}")
-    if d.get("event") != "SNAPSHOT_READY":
-        raise ContractError(f"Unexpected event: {d.get('event')}")
-    required = ["workspace_id", "video_id", "snapshot_s3_key"]
-    missing = [k for k in required if not d.get(k)]
-    if missing:
-        raise ContractError(f"Missing fields: {missing}")
-    sk = str(d["snapshot_s3_key"])
-    if not (sk.startswith("s3://") or "/" in sk):
-        raise ContractError("snapshot_s3_key must be an S3 URI (s3://...) or 'bucket/key' form.")
-    return d
+
+    try:
+        snap = SnapshotReady.model_validate(raw)
+    except ValidationError as e:
+        # Normalize Pydantic error into our contract-level error type
+        raise ContractError(f"SNAPSHOT_READY validation error: {e}") from e
+
+    # Return a plain dict with Python-native types (no Pydantic objects)
+    return snap.model_dump(mode="python")
+
 
 # ----------------------------- Optional models -----------------------------
-from pydantic import BaseModel, Field, root_validator
 
 class ColorFBL(BaseModel):
     finish: Optional[str] = None
     base: Optional[str] = None
     lightness: Optional[str] = None
     conf: float = 0.0
+
 
 class AnalysisMetrics(BaseModel):
     latency_ms: float
@@ -64,14 +78,17 @@ class AnalysisMetrics(BaseModel):
     memory_usage: Optional[float] = None  # ratio 0..1
     device: Optional[str] = None
     trained: Optional[bool] = None
+
     class Config:
         allow_population_by_field_name = True
         allow_population_by_alias = True
+
     @root_validator(pre=True)
     def _coalesce_memory_fields(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         if "mem_gb" not in values and "memory_gb" in values:
             values["mem_gb"] = values.get("memory_gb")
         return values
+
 
 class ResultAssets(BaseModel):
     annotated_image_s3_key: Optional[str] = None
@@ -80,6 +97,7 @@ class ResultAssets(BaseModel):
     annotated_url: Optional[str] = None
     vehicle_url: Optional[str] = None
     plate_url: Optional[str] = None
+
 
 class EngineResult(BaseModel):
     type: Optional[str] = None
@@ -102,11 +120,13 @@ class EngineResult(BaseModel):
     status: Optional[str] = None
     error_msg: Optional[str] = None
 
+
 # Helpers
 
 def coerce_fbl_colors(payload: Dict[str, Any]) -> List[ColorFBL]:
     raw = payload.get("colors", [])
     fbl_list: List[ColorFBL] = []
+
     def _as_fbl(item: Any) -> Optional[ColorFBL]:
         if not isinstance(item, dict):
             return None
@@ -120,11 +140,13 @@ def coerce_fbl_colors(payload: Dict[str, Any]) -> List[ColorFBL]:
         if "hex" in item or "p" in item:
             return ColorFBL(finish=None, base=None, lightness=None, conf=float(item.get("p") or 0.0))
         return None
+
     for it in raw if isinstance(raw, list) else []:
         f = _as_fbl(it)
         if f:
             fbl_list.append(f)
     return fbl_list
+
 
 __all__ = [
     "ContractError",
@@ -136,6 +158,4 @@ __all__ = [
     "EngineResult",
     "coerce_fbl_colors",
 ]
-
-
 

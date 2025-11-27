@@ -80,6 +80,10 @@ log = get_logger("cvitx.common")
 
 # ========================= Message Schema Models =========================== #
 # Pydantic v2 models for strict validation of message contracts.
+# NOTE:
+#   • SnapshotReady is the canonical SNAPSHOT_READY schema (single source of truth).
+#   • All workers and helper modules should rely on this model via
+#     validate_snapshot_ready(...) or by importing SnapshotReady directly.
 
 UUIDStr = str  # keep as string; upstream contracts are string UUIDs
 
@@ -611,6 +615,8 @@ __all__ = [
     "validate_process_video",
     "validate_process_video_db",
     "validate_snapshot_ready",
+    # schema models (canonical)
+    "SnapshotReady",
     # aws
     "get_s3",
     "get_sqs",
