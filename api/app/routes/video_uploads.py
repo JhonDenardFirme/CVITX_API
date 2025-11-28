@@ -14,39 +14,21 @@ from app.auth.deps import require_user
 from app.config import settings
 from app.services.sqs import send_json
 
-# ─────────────────────────────────────────────────────────────
-# DB & S3 / SQS wiring
-# ─────────────────────────────────────────────────────────────
-
 DB_URL = os.getenv("DATABASE_URL") or os.getenv("DB_URL")
 if not DB_URL:
     raise RuntimeError("Missing DATABASE_URL/DB_URL for video uploads")
 DB_URL = DB_URL.replace("postgresql+psycopg2", "postgresql")
-
 engine = create_engine(DB_URL, pool_pre_ping=True)
 
 s3 = boto3.client("s3", region_name=settings.aws_region)
-
-# Raw video layout: {S3_RAW_PREFIX}/{workspace_id}/{video_id}/raw/{filename}
 S3_RAW_PREFIX = os.getenv("S3_VIDEO_RAW_PREFIX", "demo_user")
-
 SQS_VIDEO_QUEUE_URL = os.getenv("SQS_VIDEO_QUEUE_URL")
-
-# Default max size (bytes) – override via env if needed
 MAX_VIDEO_BYTES = int(os.getenv("VIDEO_UPLOAD_MAX_BYTES", str(5 * 1024 * 1024 * 1024)))  # 5GB
-
 
 router = APIRouter(prefix="/workspaces", tags=["video-uploads"])
 
 
-# ─────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────
-
 def _assert_workspace(conn, workspace_id: str, user_id: str) -> None:
-    """
-    Ensure the workspace exists and belongs to this user.
-    """
     row = conn.execute(
         text(
             """
@@ -63,10 +45,6 @@ def _assert_workspace(conn, workspace_id: str, user_id: str) -> None:
         raise HTTPException(status_code=404, detail="Workspace not found")
 
 
-# ─────────────────────────────────────────────────────────────
-# Pydantic models
-# ─────────────────────────────────────────────────────────────
-
 class VideoPresignIn(BaseModel):
     filename: str
     content_type: str
@@ -75,7 +53,6 @@ class VideoPresignIn(BaseModel):
     camera_label: Optional[str] = None
     frame_stride: int = 3
     recorded_at: Optional[datetime] = None
-    # Optional hint; stored in videos.workspace_code and forwarded to workers
     workspace_code: Optional[str] = None
 
 
@@ -93,23 +70,11 @@ class VideoCommitIn(BaseModel):
 
 
 class VideoEnqueueIn(BaseModel):
-    # Optional hint for downstream workers (e.g., "cmt", "baseline", "both")
     variant: Optional[str] = "cmt"
 
 
-# ─────────────────────────────────────────────────────────────
-# POST /workspaces/{workspace_id}/videos/presign
-# ─────────────────────────────────────────────────────────────
-
 @router.post("/{workspace_id}/videos/presign")
 def presign_video(workspace_id: str, body: VideoPresignIn, me=Depends(require_user)):
-    """
-    Step 1: Allocate a video_id and return a presigned PUT URL for the raw MP4.
-
-    - Validates workspace ownership.
-    - Enforces a max size guard.
-    - Does NOT create the videos row yet (that happens on commit).
-    """
     if body.file_size_bytes <= 0 or body.file_size_bytes > MAX_VIDEO_BYTES:
         raise HTTPException(
             status_code=400,
@@ -120,10 +85,7 @@ def presign_video(workspace_id: str, body: VideoPresignIn, me=Depends(require_us
         _assert_workspace(conn, workspace_id, str(me.id))
 
     video_id = str(uuid.uuid4())
-    filename = os.path.basename(body.filename)
-    if not filename:
-        filename = f"video-{video_id}.mp4"
-
+    filename = os.path.basename(body.filename) or f"video-{video_id}.mp4"
     s3_key_raw = f"{S3_RAW_PREFIX}/{workspace_id}/{video_id}/raw/{filename}"
 
     try:
@@ -154,28 +116,18 @@ def presign_video(workspace_id: str, body: VideoPresignIn, me=Depends(require_us
     }
 
 
-# ─────────────────────────────────────────────────────────────
-# POST /workspaces/{workspace_id}/videos/commit
-# ─────────────────────────────────────────────────────────────
-
 @router.post("/{workspace_id}/videos/commit")
 def commit_video(workspace_id: str, body: VideoCommitIn, me=Depends(require_user)):
-    """
-    Step 2: After the MP4 is uploaded to S3 via the presigned URL,
-    this endpoint creates/updates the videos row.
-
-    - Validates workspace.
-    - Optionally verifies size & content-type against S3.
-    - Upserts into videos with status='uploaded'.
-    """
     with engine.begin() as conn:
         _assert_workspace(conn, workspace_id, str(me.id))
 
-    # Optional S3 integrity checks
     try:
         head = s3.head_object(Bucket=settings.s3_bucket, Key=body.s3KeyRaw)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"S3 object not found for key {body.s3KeyRaw}") from e
+        raise HTTPException(
+            status_code=400,
+            detail=f"S3 object not found for key {body.s3KeyRaw}",
+        ) from e
 
     actual_len = int(head.get("ContentLength", 0))
     if body.fileSizeBytes is not None and int(body.fileSizeBytes) != actual_len:
@@ -201,54 +153,47 @@ def commit_video(workspace_id: str, body: VideoCommitIn, me=Depends(require_user
         "recorded_at": body.recordedAt,
         "s3_key_raw": body.s3KeyRaw,
         "frame_stride": body.frameStride,
-        "uid": str(me.id),
     }
 
     with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                INSERT INTO videos (
-                    id,
-                    workspace_id,
-                    workspace_code,
-                    file_name,
-                    camera_label,
-                    camera_code,
-                    recorded_at,
-                    s3_key_raw,
-                    frame_stride,
-                    status,
-                    created_by_user_id
-                )
-                VALUES (
-                    :id,
-                    :wid,
-                    :wcode,
-                    :file_name,
-                    :camera_label,
-                    :camera_code,
-                    :recorded_at,
-                    :s3_key_raw,
-                    :frame_stride,
-                    'uploaded',
-                    :uid
-                )
-                ON CONFLICT (id) DO UPDATE
-                SET workspace_id   = EXCLUDED.workspace_id,
-                    workspace_code = EXCLUDED.workspace_code,
-                    file_name      = EXCLUDED.file_name,
-                    camera_label   = EXCLUDED.camera_label,
-                    camera_code    = EXCLUDED.camera_code,
-                    recorded_at    = EXCLUDED.recorded_at,
-                    s3_key_raw     = EXCLUDED.s3_key_raw,
-                    frame_stride   = EXCLUDED.frame_stride,
-                    status         = 'uploaded',
-                    updated_at     = now()
-                """
-            ),
-            params,
-        )
+        insert_sql = """
+            INSERT INTO videos (
+                id,
+                workspace_id,
+                workspace_code,
+                file_name,
+                camera_label,
+                camera_code,
+                recorded_at,
+                s3_key_raw,
+                frame_stride,
+                status
+            )
+            VALUES (
+                :id,
+                :wid,
+                :wcode,
+                :file_name,
+                :camera_label,
+                :camera_code,
+                :recorded_at,
+                :s3_key_raw,
+                :frame_stride,
+                'uploaded'
+            )
+            ON CONFLICT (id) DO UPDATE
+            SET workspace_id   = EXCLUDED.workspace_id,
+                workspace_code = EXCLUDED.workspace_code,
+                file_name      = EXCLUDED.file_name,
+                camera_label   = EXCLUDED.camera_label,
+                camera_code    = EXCLUDED.camera_code,
+                recorded_at    = EXCLUDED.recorded_at,
+                s3_key_raw     = EXCLUDED.s3_key_raw,
+                frame_stride   = EXCLUDED.frame_stride,
+                status         = 'uploaded',
+                updated_at     = now()
+        """
+        conn.execute(text(insert_sql), params)
 
         row = conn.execute(
             text(
@@ -263,7 +208,6 @@ def commit_video(workspace_id: str, body: VideoCommitIn, me=Depends(require_user
                        s3_key_raw,
                        frame_stride,
                        status,
-                       created_at,
                        updated_at
                   FROM videos
                  WHERE id = :id
@@ -286,16 +230,11 @@ def commit_video(workspace_id: str, body: VideoCommitIn, me=Depends(require_user
         "s3KeyRaw": row["s3_key_raw"],
         "frameStride": row["frame_stride"],
         "status": row["status"],
-        "createdAt": row["created_at"].isoformat() if row.get("created_at") else None,
         "updatedAt": row["updated_at"].isoformat() if row.get("updated_at") else None,
     }
 
     return {"video": video, "autoEnqueued": False}
 
-
-# ─────────────────────────────────────────────────────────────
-# POST /workspaces/{workspace_id}/videos/{video_id}/enqueue
-# ─────────────────────────────────────────────────────────────
 
 @router.post("/{workspace_id}/videos/{video_id}/enqueue")
 def enqueue_video(
@@ -304,15 +243,6 @@ def enqueue_video(
     body: VideoEnqueueIn,
     me=Depends(require_user),
 ):
-    """
-    Step 3: Enqueue the video for processing.
-
-    - Loads the videos row.
-    - Builds a PROCESS_VIDEO payload.
-    - Sends to SQS_VIDEO_QUEUE_URL.
-    - Marks videos.status='processing'.
-    - Safe to call multiple times (re-runs).
-    """
     if not SQS_VIDEO_QUEUE_URL:
         raise HTTPException(status_code=500, detail="Video queue not configured")
 
@@ -353,7 +283,6 @@ def enqueue_video(
             "recordedAt": v["recorded_at"].isoformat() if v["recorded_at"] else None,
         }
 
-        # Optional hint; worker may ignore or use for variant routing
         if body.variant:
             payload["variant"] = body.variant
 
@@ -378,4 +307,3 @@ def enqueue_video(
         "status": "queued",
         "sqsResponse": resp,
     }
-
