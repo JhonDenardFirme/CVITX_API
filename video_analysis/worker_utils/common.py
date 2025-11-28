@@ -6,7 +6,9 @@ This module centralizes:
 • Logging (plain or JSON lines)
 • Message validation (PROCESS_VIDEO, PROCESS_VIDEO_DB, SNAPSHOT_READY) via Pydantic v2
 • AWS clients (S3, SQS) with region from CONFIG
-• DB helpers (psycopg2): get_video_by_id, create_image_analysis, upsert_results
+• DB helpers (psycopg2): get_video_by_id, create_image_analysis, upsert_results,
+  create_video_analysis, upsert_video_results, set_video_analysis_status,
+  start_video_run, get_video_run, set_video_expected, upsert_video_detection_and_progress
 • Key builder for deterministic snapshot S3 keys (bucket-relative)
 • Imaging helpers: crop_with_margin, letterbox_to_square, encode_jpeg
 • Time helpers: ms_from_frame, detected_at
@@ -46,6 +48,7 @@ from video_analysis.worker_config import (
 
 # =============================== Logging =================================== #
 
+
 class _JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload = {
@@ -69,7 +72,11 @@ def get_logger(name: str = "cvitx") -> logging.Logger:
     if CONFIG.get("JSON_LOGS"):
         h.setFormatter(_JsonFormatter())
     else:
-        h.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s:%(name)s: %(message)s"))
+        h.setFormatter(
+            logging.Formatter(
+                "[%(asctime)s] %(levelname)s:%(name)s: %(message)s"
+            )
+        )
     logger.addHandler(h)
     logger.propagate = False
     return logger
@@ -103,6 +110,8 @@ class ProcessVideo(BaseModel):
     s3_key_raw: str
     frame_stride: int = Field(ge=1)
     recordedAt: Optional[str] = None
+    variant: str = "cmt"
+    run_id: Optional[UUIDStr] = None
 
     @field_validator("s3_key_raw")
     @classmethod
@@ -114,6 +123,8 @@ class ProcessVideoDB(BaseModel):
     event: Literal["PROCESS_VIDEO_DB"]
     video_id: UUIDStr
     workspace_id: UUIDStr
+    variant: str = "cmt"
+    run_id: Optional[UUIDStr] = None
 
 
 class SnapshotReady(BaseModel):
@@ -128,6 +139,8 @@ class SnapshotReady(BaseModel):
     detectedIn: int = Field(ge=0)  # milliseconds since video start
     detectedAt: Optional[str] = None
     yolo_type: str
+    variant: str = "cmt"
+    run_id: UUIDStr
 
     @field_validator("snapshot_s3_key")
     @classmethod
@@ -168,6 +181,7 @@ def validate_snapshot_ready(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 # ================================ AWS Clients ============================== #
 
+
 @lru_cache(maxsize=1)
 def get_s3():
     """Singleton S3 client (region from CONFIG)."""
@@ -181,6 +195,7 @@ def get_sqs():
 
 
 # ================================ DB Helpers =============================== #
+
 
 def _psycopg_dsn(url: str) -> str:
     """Convert SQLAlchemy-style URL to psycopg2 DSN if needed."""
@@ -272,10 +287,10 @@ def upsert_results(analysis_id: str, variant: str, result: Dict[str, Any]) -> No
         "status": "done"|"error" (default "done")
       }
     """
-    t = (result.get("type") or {})
-    m = (result.get("make") or {})
-    mm = (result.get("model") or {})
-    p = (result.get("plate") or {})
+    t = result.get("type") or {}
+    m = result.get("make") or {}
+    mm = result.get("model") or {}
+    p = result.get("plate") or {}
     colors = result.get("colors") or []
     assets = result.get("assets") or {}
     latency_ms = int(result.get("latency_ms") or 0)
@@ -391,10 +406,10 @@ def upsert_video_results(analysis_id: str, variant: str, result: Dict[str, Any])
         "error_msg": str|None
       }
     """
-    t = (result.get("type") or {})
-    m = (result.get("make") or {})
-    mm = (result.get("model") or {})
-    p = (result.get("plate") or {})
+    t = result.get("type") or {}
+    m = result.get("make") or {}
+    mm = result.get("model") or {}
+    p = result.get("plate") or {}
     colors = result.get("colors") or []
     assets = result.get("assets") or {}
     latency_ms = int(result.get("latency_ms") or 0)
@@ -468,7 +483,9 @@ def upsert_video_results(analysis_id: str, variant: str, result: Dict[str, Any])
         conn.commit()
 
 
-def set_video_analysis_status(analysis_id: str, status: str, error_msg: Optional[str] = None) -> None:
+def set_video_analysis_status(
+    analysis_id: str, status: str, error_msg: Optional[str] = None
+) -> None:
     """
     Update video_analyses.status and optional error_msg for a given analysis.
     """
@@ -489,7 +506,246 @@ def set_video_analysis_status(analysis_id: str, status: str, error_msg: Optional
         conn.commit()
 
 
+def start_video_run(
+    workspace_id: str,
+    video_id: str,
+    variant: str,
+    run_id: str,
+) -> str:
+    """
+    Canonical initializer. Overwrites previous run state for (workspace_id, video_id, variant):
+    - sets current run_id
+    - resets counters
+    - deletes old per-track rows + summary rows (clean slate)
+    Returns stable analysis_id (video_analyses.id).
+    """
+    sql_upsert = """
+    INSERT INTO video_analyses (
+      workspace_id, video_id, variant, run_id,
+      status, error_msg,
+      expected_snapshots, processed_snapshots, processed_ok, processed_err,
+      run_started_at, run_finished_at, last_snapshot_at,
+      created_at, updated_at
+    )
+    VALUES (
+      %(workspace_id)s, %(video_id)s, %(variant)s, %(run_id)s,
+      'processing', NULL,
+      NULL, 0, 0, 0,
+      NOW(), NULL, NULL,
+      NOW(), NOW()
+    )
+    ON CONFLICT (workspace_id, video_id, variant)
+    DO UPDATE SET
+      run_id = EXCLUDED.run_id,
+      status = 'processing',
+      error_msg = NULL,
+      expected_snapshots = NULL,
+      processed_snapshots = 0,
+      processed_ok = 0,
+      processed_err = 0,
+      run_started_at = NOW(),
+      run_finished_at = NULL,
+      last_snapshot_at = NULL,
+      updated_at = NOW()
+    RETURNING id::text;
+    """
+
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            sql_upsert,
+            {
+                "workspace_id": str(workspace_id),
+                "video_id": str(video_id),
+                "variant": str(variant),
+                "run_id": str(run_id),
+            },
+        )
+        analysis_id = cur.fetchone()[0]
+
+        # Clean slate: delete old rows (DB is authoritative)
+        cur.execute(
+            "DELETE FROM video_detections WHERE analysis_id::text = %s;",
+            (analysis_id,),
+        )
+        cur.execute(
+            "DELETE FROM video_analysis_results WHERE analysis_id::text = %s;",
+            (analysis_id,),
+        )
+
+        conn.commit()
+        return analysis_id
+
+
+def get_video_run(
+    workspace_id: str,
+    video_id: str,
+    variant: str,
+) -> Optional[Dict[str, Any]]:
+    sql = """
+    SELECT
+      id::text AS analysis_id,
+      run_id::text AS run_id,
+      status,
+      expected_snapshots,
+      processed_snapshots,
+      processed_ok,
+      processed_err
+    FROM video_analyses
+    WHERE workspace_id::text=%s AND video_id::text=%s AND variant=%s
+    LIMIT 1;
+    """
+    with _connect() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            sql,
+            (str(workspace_id), str(video_id), str(variant)),
+        )
+        return cur.fetchone()
+
+
+def set_video_expected(analysis_id: str, expected: int) -> None:
+    sql = """
+    UPDATE video_analyses
+    SET expected_snapshots=%s, updated_at=NOW()
+    WHERE id::text=%s;
+    """
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(sql, (int(expected), str(analysis_id)))
+        conn.commit()
+
+
+def upsert_video_detection_and_progress(
+    analysis_id: str,
+    run_id: str,
+    track_id: int,
+    payload: Dict[str, Any],
+) -> None:
+    """
+    Upsert ONE per-track row and update parent progress counters atomically.
+    IMPORTANT: counters increment only on FIRST insert (not on duplicate redelivery).
+    """
+    sql = """
+    WITH ins AS (
+      INSERT INTO video_detections (
+        analysis_id, run_id, track_id,
+        snapshot_s3_key, detected_in_ms, detected_at, yolo_type,
+        type_label, type_conf,
+        make_label, make_conf,
+        model_label, model_conf,
+        plate_text, plate_conf,
+        colors, assets,
+        latency_ms, memory_gb,
+        status, error_msg,
+        created_at, updated_at
+      )
+      VALUES (
+        %(analysis_id)s, %(run_id)s, %(track_id)s,
+        %(snapshot_s3_key)s, %(detected_in_ms)s, %(detected_at)s, %(yolo_type)s,
+        %(type_label)s, %(type_conf)s,
+        %(make_label)s, %(make_conf)s,
+        %(model_label)s, %(model_conf)s,
+        %(plate_text)s, %(plate_conf)s,
+        %(colors)s, %(assets)s,
+        %(latency_ms)s, %(memory_gb)s,
+        %(status)s, %(error_msg)s,
+        NOW(), NOW()
+      )
+      ON CONFLICT (analysis_id, run_id, track_id)
+      DO UPDATE SET
+        snapshot_s3_key = EXCLUDED.snapshot_s3_key,
+        detected_in_ms  = EXCLUDED.detected_in_ms,
+        detected_at     = EXCLUDED.detected_at,
+        yolo_type       = EXCLUDED.yolo_type,
+        type_label      = EXCLUDED.type_label,
+        type_conf       = EXCLUDED.type_conf,
+        make_label      = EXCLUDED.make_label,
+        make_conf       = EXCLUDED.make_conf,
+        model_label     = EXCLUDED.model_label,
+        model_conf      = EXCLUDED.model_conf,
+        plate_text      = EXCLUDED.plate_text,
+        plate_conf      = EXCLUDED.plate_conf,
+        colors          = EXCLUDED.colors,
+        assets          = EXCLUDED.assets,
+        latency_ms      = EXCLUDED.latency_ms,
+        memory_gb       = EXCLUDED.memory_gb,
+        status          = EXCLUDED.status,
+        error_msg       = EXCLUDED.error_msg,
+        updated_at      = NOW()
+      RETURNING (xmax = 0) AS inserted
+    ),
+    prog AS (
+      UPDATE video_analyses
+      SET
+        processed_snapshots = processed_snapshots
+          + CASE WHEN (SELECT inserted FROM ins) THEN 1 ELSE 0 END,
+        processed_ok = processed_ok
+          + CASE WHEN (SELECT inserted FROM ins) AND %(status)s='done' THEN 1 ELSE 0 END,
+        processed_err = processed_err
+          + CASE WHEN (SELECT inserted FROM ins) AND %(status)s='error' THEN 1 ELSE 0 END,
+        last_snapshot_at = NOW(),
+        updated_at = NOW()
+      WHERE id::text = %(analysis_id)s
+      RETURNING expected_snapshots, processed_snapshots, processed_ok
+    )
+    UPDATE video_analyses
+    SET
+      status = CASE
+        WHEN (SELECT expected_snapshots FROM prog) IS NOT NULL
+         AND (SELECT processed_snapshots FROM prog) >= (SELECT expected_snapshots FROM prog)
+        THEN CASE WHEN (SELECT processed_ok FROM prog) > 0 THEN 'done' ELSE 'error' END
+        ELSE status
+      END,
+      run_finished_at = CASE
+        WHEN (SELECT expected_snapshots FROM prog) IS NOT NULL
+         AND (SELECT processed_snapshots FROM prog) >= (SELECT expected_snapshots FROM prog)
+        THEN NOW()
+        ELSE run_finished_at
+      END,
+      updated_at = NOW()
+    WHERE id::text = %(analysis_id)s;
+    """
+
+    t = payload.get("type") or {}
+    m = payload.get("make") or {}
+    mm = payload.get("model") or {}
+    p = payload.get("plate") or {}
+    colors = payload.get("colors") or []
+    assets = payload.get("assets") or {}
+
+    params = {
+        "analysis_id": str(analysis_id),
+        "run_id": str(run_id),
+        "track_id": int(track_id),
+        "snapshot_s3_key": str(payload.get("snapshot_s3_key")),
+        "detected_in_ms": int(payload.get("detected_in_ms") or 0),
+        "detected_at": payload.get("detected_at"),
+        "yolo_type": payload.get("yolo_type"),
+        "type_label": t.get("label"),
+        "type_conf": float(t.get("conf")) if t.get("conf") is not None else None,
+        "make_label": m.get("label"),
+        "make_conf": float(m.get("conf")) if m.get("conf") is not None else None,
+        "model_label": mm.get("label"),
+        "model_conf": float(mm.get("conf")) if mm.get("conf") is not None else None,
+        "plate_text": p.get("text"),
+        "plate_conf": float(p.get("conf")) if p.get("conf") is not None else None,
+        "colors": PgJson(colors),
+        "assets": PgJson(assets),
+        "latency_ms": int(payload.get("latency_ms") or 0),
+        "memory_gb": (
+            float(payload.get("memory_gb"))
+            if payload.get("memory_gb") is not None
+            else None
+        ),
+        "status": str(payload.get("status") or "done"),
+        "error_msg": payload.get("error_msg"),
+    }
+
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(sql, params)
+        conn.commit()
+
+
 # ============================ Key / Path Builders =========================== #
+
 
 def build_snapshot_key(
     workspace_id: str,
@@ -511,6 +767,7 @@ def build_snapshot_key(
 
 
 # ================================ Imaging ================================== #
+
 
 def crop_with_margin(
     frame: np.ndarray,
@@ -546,7 +803,9 @@ def crop_with_margin(
     return frame[cy1:cy2, cx1:cx2].copy()
 
 
-def letterbox_to_square(img: np.ndarray, size: int = int(CONFIG["SNAPSHOT_SIZE"])) -> np.ndarray:
+def letterbox_to_square(
+    img: np.ndarray, size: int = int(CONFIG["SNAPSHOT_SIZE"])
+) -> np.ndarray:
     """
     Letterbox an image to a square canvas of `size` with aspect preserved (pad with black).
     Returns the new H×W×3 uint8 image (size×size×3).
@@ -562,19 +821,26 @@ def letterbox_to_square(img: np.ndarray, size: int = int(CONFIG["SNAPSHOT_SIZE"]
     canvas = np.zeros((size, size, 3), dtype=np.uint8)
     x0 = (size - nw) // 2
     y0 = (size - nh) // 2
-    canvas[y0:y0 + nh, x0:x0 + nw] = resized
+    canvas[y0 : y0 + nh, x0 : x0 + nw] = resized
     return canvas
 
 
-def encode_jpeg(img: np.ndarray, quality: int = int(CONFIG["JPG_QUALITY"])) -> bytes:
+def encode_jpeg(
+    img: np.ndarray, quality: int = int(CONFIG["JPG_QUALITY"])
+) -> bytes:
     """Encode an image to JPEG bytes with the configured quality."""
-    ok, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)])
+    ok, buf = cv2.imencode(
+        ".jpg",
+        img,
+        [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)],
+    )
     if not ok:
         raise RuntimeError("cv2.imencode failed")
     return bytes(buf)
 
 
 # ================================ Time Utils =============================== #
+
 
 def ms_from_frame(frame_index: int, fps: float) -> int:
     """Convert frame index to elapsed milliseconds (rounded)."""
@@ -607,6 +873,7 @@ def detected_at(recorded_at_iso: Optional[str], detected_ms: int) -> Optional[st
 
 # ================================ Exports ================================== #
 
+
 __all__ = [
     # logging
     "get_logger",
@@ -627,6 +894,10 @@ __all__ = [
     "create_video_analysis",
     "upsert_video_results",
     "set_video_analysis_status",
+    "start_video_run",
+    "get_video_run",
+    "set_video_expected",
+    "upsert_video_detection_and_progress",
     # keys
     "build_snapshot_key",
     # imaging

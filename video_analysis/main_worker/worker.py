@@ -8,12 +8,15 @@ Key properties:
 • Uses the same engine path as image workers: from api.analysis import engine as E
 • Model bundle loading is ENV-driven: CMT_BUNDLE_PATH points to a DIRECTORY
   with label_maps.json + *.pt (no hard-coded bundle paths in code)
-• Real S3 image bytes → E.run_inference(...) → write results & artifacts
-• Preserves the video_analyses / video_analysis_results schema and logic
+• Real S3 image bytes → E.run_inference(...) → write per-track results & artifacts
+• Uses video_analyses + video_detections with run-aware progress tracking
 • Normalizes DB URL scheme if needed (postgresql+psycopg2:// → postgresql://)
 """
 
-import io, json, time, traceback
+import io
+import json
+import time
+import traceback
 from typing import Any, Dict, Tuple, Optional
 from urllib.parse import urlparse
 
@@ -25,8 +28,9 @@ from video_analysis.worker_utils.common import (
     get_s3,
     get_sqs,
     validate_snapshot_ready,
-    create_video_analysis,
-    upsert_video_results,
+    get_video_run,
+    start_video_run,
+    upsert_video_detection_and_progress,
     set_video_analysis_status,
 )
 from video_analysis.worker_config import config_summary
@@ -165,11 +169,13 @@ def _process_one(msg_body: Dict[str, Any], receipt: str) -> None:
     Process a single SNAPSHOT_READY message.
 
     • On success:
-        - Creates/updates video_analyses + video_analysis_results (variant="main")
-        - Marks parent analysis status = 'done'
-        - Deletes the SQS message
+        - Looks up the current video run (video_analyses row) by (workspace_id, video_id, variant)
+        - Drops stale snapshots whose run_id does not match the current run
+        - Runs inference on the snapshot
+        - Writes one per-track row into video_detections and updates run progress
+        - Deletes the SQS message only after DB write succeeds
     • On failure (after aid is known):
-        - Marks parent analysis status = 'error' with error_msg
+        - Marks the video analysis status = 'error' with error_msg
         - Re-queues the SQS message with a short visibility timeout
     """
     aid: Optional[str] = None
@@ -179,12 +185,31 @@ def _process_one(msg_body: Dict[str, Any], receipt: str) -> None:
         snap = validate_snapshot_ready(msg_body)
         wid = snap["workspace_id"]
         vid = snap["video_id"]
+        variant = str(snap.get("variant") or "cmt")
+        run_id = str(snap["run_id"])
         bkt, key = _bucket_key(snap["snapshot_s3_key"])
 
-        # 2) Create analysis row tied to video (or reuse existing snapshot)
-        aid = create_video_analysis(f"s3://{bkt}/{key}", wid, vid)
+        # 2) Canonical run lookup (or bootstrap fallback)
+        current = get_video_run(wid, vid, variant)
+        if not current:
+            aid = start_video_run(wid, vid, variant, run_id)
+            current = get_video_run(wid, vid, variant)
 
-        # 3) Download image and run inference (CMT as main)
+        aid = current["analysis_id"]
+
+        # 3) Stale snapshot guard — drop old runs safely
+        if str(current.get("run_id") or "") != run_id:
+            # Stale snapshot from older run — drop it so it cannot overlap.
+            sqs.delete_message(QueueUrl=Q_SNAPSHOT, ReceiptHandle=receipt)
+            log.info(
+                "[drop] stale snapshot run_id=%s current_run_id=%s track=%s",
+                run_id,
+                current.get("run_id"),
+                snap["track_id"],
+            )
+            return
+
+        # 4) Download image and run inference (CMT as main)
         obj = s3.get_object(Bucket=bkt, Key=key)
         img_bytes = obj["Body"].read()
 
@@ -203,7 +228,7 @@ def _process_one(msg_body: Dict[str, Any], receipt: str) -> None:
             analysis_id=f"vid_{aid}",
         )
 
-        # 4) Optional artifacts
+        # 5) Optional artifacts
         assets: Dict[str, str] = {}
         try:
             pil = Image.open(io.BytesIO(img_bytes)).convert("RGB")
@@ -211,9 +236,12 @@ def _process_one(msg_body: Dict[str, Any], receipt: str) -> None:
         except Exception as e:
             log.warning("artifact_io: %s", e)
 
-        # 5) Normalize payload for shared upsert helper (FBL colors already list)
-        colors_fbl = dets.get("colors") or []
-        result: Dict[str, Any] = {
+        # 6) Build per-track payload (one row per vehicle/track)
+        per_track: Dict[str, Any] = {
+            "snapshot_s3_key": f"s3://{bkt}/{key}",
+            "detected_in_ms": int(snap.get("detectedIn") or 0),
+            "detected_at": snap.get("detectedAt"),
+            "yolo_type": snap.get("yolo_type"),
             "type": {"label": dets.get("type"), "conf": dets.get("type_conf")},
             "make": {"label": dets.get("make"), "conf": dets.get("make_conf")},
             "model": {"label": dets.get("model"), "conf": dets.get("model_conf")},
@@ -221,7 +249,7 @@ def _process_one(msg_body: Dict[str, Any], receipt: str) -> None:
                 "text": dets.get("plate_text"),
                 "conf": dets.get("plate_conf"),
             },
-            "colors": colors_fbl[:3],
+            "colors": (dets.get("colors") or [])[:3],
             "assets": assets,
             "latency_ms": int(
                 (metrics.get("latency_ms") or timings.get("total") or 0.0)
@@ -231,20 +259,26 @@ def _process_one(msg_body: Dict[str, Any], receipt: str) -> None:
             "error_msg": None,
         }
 
-        # 6) UPSERT results and mark parent done
-        upsert_video_results(aid, "main", result)
-        set_video_analysis_status(aid, "done", None)
+        # 7) Write per-track row + increment progress counters
+        upsert_video_detection_and_progress(
+            analysis_id=aid,
+            run_id=run_id,
+            track_id=int(snap["track_id"]),
+            payload=per_track,
+        )
 
         log.info(
-            "[upsert] aid=%s variant=main type=%s make=%s model=%s | %s",
+            "[upsert] aid=%s variant=%s track=%s type=%s make=%s model=%s | %s",
             aid,
-            result["type"]["label"],
-            result["make"]["label"],
-            result["model"]["label"],
+            variant,
+            snap["track_id"],
+            per_track["type"]["label"],
+            per_track["make"]["label"],
+            per_track["model"]["label"],
             config_summary(),
         )
 
-        # 7) Acknowledge SQS message only after DB writes succeed
+        # 8) Acknowledge SQS message only after DB write succeeds
         sqs.delete_message(QueueUrl=Q_SNAPSHOT, ReceiptHandle=receipt)
 
     except Exception as e:
