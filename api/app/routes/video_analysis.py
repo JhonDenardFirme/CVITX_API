@@ -415,8 +415,11 @@ def get_video_progress(
                        processed_err
                   FROM video_analyses
                  WHERE workspace_id = :wid
-                   AND video_id = :vid
-                   AND variant = :variant
+                   AND video_id     = :vid
+                   AND variant      = :variant
+                 ORDER BY updated_at DESC,
+                          run_started_at DESC NULLS LAST,
+                          created_at DESC
                  LIMIT 1
                 """
             ),
@@ -475,8 +478,11 @@ def list_video_detections(
                        run_id
                   FROM video_analyses
                  WHERE workspace_id = :wid
-                   AND video_id = :vid
-                   AND variant = :variant
+                   AND video_id     = :vid
+                   AND variant      = :variant
+                 ORDER BY updated_at DESC,
+                          run_started_at DESC NULLS LAST,
+                          created_at DESC
                  LIMIT 1
                 """
             ),

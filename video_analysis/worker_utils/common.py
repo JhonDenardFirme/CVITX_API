@@ -21,6 +21,7 @@ Design rules:
 
 from __future__ import annotations
 
+import os
 import json
 import logging
 import math
@@ -36,6 +37,7 @@ import numpy as np
 import psycopg2
 from psycopg2.extras import RealDictCursor, Json as PgJson
 from pydantic import BaseModel, Field, ValidationError, field_validator
+from sqlalchemy import create_engine, text
 
 from video_analysis.worker_config import (
     CONFIG,
@@ -210,6 +212,23 @@ def _db_connect_params() -> Dict[str, str]:
 
 def _connect():
     return psycopg2.connect(**_db_connect_params())
+
+
+# --------------------------------------------------------------------
+# Video DB engine — shared by YOLO + main workers
+# --------------------------------------------------------------------
+_VIDEO_DB_URL = os.getenv("DATABASE_URL") or os.getenv("DB_URL")
+if not _VIDEO_DB_URL:
+    raise RuntimeError("Missing DATABASE_URL/DB_URL for video workers")
+
+# Normalize for SQLAlchemy if needed
+_VIDEO_DB_URL = _VIDEO_DB_URL.replace("postgresql+psycopg2", "postgresql")
+_video_engine = create_engine(_VIDEO_DB_URL, pool_pre_ping=True)
+
+
+def _video_conn():
+    """Small helper to get a connection context for video_* tables."""
+    return _video_engine.begin()
 
 
 class VideoRow(TypedDict, total=False):
@@ -483,134 +502,180 @@ def upsert_video_results(analysis_id: str, variant: str, result: Dict[str, Any])
         conn.commit()
 
 
-def set_video_analysis_status(
-    analysis_id: str, status: str, error_msg: Optional[str] = None
-) -> None:
+def set_video_analysis_status(analysis_id: str, status: str, error_msg: Optional[str]) -> None:
     """
-    Update video_analyses.status and optional error_msg for a given analysis.
+    Set run-level status for a video analysis.
+
+    Used for fatal errors or explicit cancellation.
     """
-    sql = """
-    UPDATE video_analyses
-    SET status = %(status)s,
-        error_msg = %(error_msg)s,
-        updated_at = NOW()
-    WHERE id::text = %(analysis_id)s;
-    """
-    params = {
-        "analysis_id": str(analysis_id),
-        "status": str(status),
-        "error_msg": str(error_msg) if error_msg is not None else None,
-    }
-    with _connect() as conn, conn.cursor() as cur:
-        cur.execute(sql, params)
-        conn.commit()
+    with _video_conn() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE video_analyses
+                   SET status         = :status,
+                       error_msg      = :error_msg,
+                       run_finished_at = CASE
+                                           WHEN :status IN ('error', 'done')
+                                           THEN COALESCE(run_finished_at, now())
+                                           ELSE run_finished_at
+                                         END,
+                       updated_at     = now()
+                 WHERE id = :aid
+                """
+            ),
+            {"aid": analysis_id, "status": status, "error_msg": error_msg},
+        )
 
 
-def start_video_run(
-    workspace_id: str,
-    video_id: str,
-    variant: str,
-    run_id: str,
-) -> str:
+def start_video_run(workspace_id: str, video_id: str, variant: str, run_id: str) -> str:
     """
-    Canonical initializer. Overwrites previous run state for (workspace_id, video_id, variant):
-    - sets current run_id
-    - resets counters
-    - deletes old per-track rows + summary rows (clean slate)
-    Returns stable analysis_id (video_analyses.id).
-    """
-    sql_upsert = """
-    INSERT INTO video_analyses (
-      workspace_id, video_id, variant, run_id,
-      status, error_msg,
-      expected_snapshots, processed_snapshots, processed_ok, processed_err,
-      run_started_at, run_finished_at, last_snapshot_at,
-      created_at, updated_at
-    )
-    VALUES (
-      %(workspace_id)s, %(video_id)s, %(variant)s, %(run_id)s,
-      'processing', NULL,
-      NULL, 0, 0, 0,
-      NOW(), NULL, NULL,
-      NOW(), NOW()
-    )
-    ON CONFLICT (workspace_id, video_id, variant)
-    DO UPDATE SET
-      run_id = EXCLUDED.run_id,
-      status = 'processing',
-      error_msg = NULL,
-      expected_snapshots = NULL,
-      processed_snapshots = 0,
-      processed_ok = 0,
-      processed_err = 0,
-      run_started_at = NOW(),
-      run_finished_at = NULL,
-      last_snapshot_at = NULL,
-      updated_at = NOW()
-    RETURNING id::text;
-    """
+    Create a new run container in video_analyses and return its analysis_id.
 
-    with _connect() as conn, conn.cursor() as cur:
-        cur.execute(
-            sql_upsert,
+    • One row per (workspace, video, variant, run_id).
+    • Older runs are kept for history; latest run is selected by updated_at.
+    """
+    analysis_id = str(uuid.uuid4())
+    now = datetime.utcnow()
+
+    with _video_conn() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO video_analyses (
+                    id,
+                    workspace_id,
+                    video_id,
+                    variant,
+                    run_id,
+                    status,
+                    expected_snapshots,
+                    processed_snapshots,
+                    processed_ok,
+                    processed_err,
+                    run_started_at,
+                    run_finished_at,
+                    last_snapshot_at,
+                    error_msg,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    :id,
+                    :wid,
+                    :vid,
+                    :variant,
+                    :run_id,
+                    'running',
+                    0,
+                    0,
+                    0,
+                    0,
+                    :now,
+                    NULL,
+                    NULL,
+                    NULL,
+                    :now,
+                    :now
+                )
+                """
+            ),
             {
-                "workspace_id": str(workspace_id),
-                "video_id": str(video_id),
-                "variant": str(variant),
-                "run_id": str(run_id),
+                "id": analysis_id,
+                "wid": workspace_id,
+                "vid": video_id,
+                "variant": variant,
+                "run_id": run_id,
+                "now": now,
             },
         )
-        analysis_id = cur.fetchone()[0]
 
-        # Clean slate: delete old rows (DB is authoritative)
-        cur.execute(
-            "DELETE FROM video_detections WHERE analysis_id::text = %s;",
-            (analysis_id,),
-        )
-        cur.execute(
-            "DELETE FROM video_analysis_results WHERE analysis_id::text = %s;",
-            (analysis_id,),
-        )
-
-        conn.commit()
-        return analysis_id
+    return analysis_id
 
 
-def get_video_run(
-    workspace_id: str,
-    video_id: str,
-    variant: str,
-) -> Optional[Dict[str, Any]]:
-    sql = """
-    SELECT
-      id::text AS analysis_id,
-      run_id::text AS run_id,
-      status,
-      expected_snapshots,
-      processed_snapshots,
-      processed_ok,
-      processed_err
-    FROM video_analyses
-    WHERE workspace_id::text=%s AND video_id::text=%s AND variant=%s
-    LIMIT 1;
+def get_video_run(workspace_id: str, video_id: str, variant: str) -> Optional[Dict[str, Any]]:
     """
-    with _connect() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute(
-            sql,
-            (str(workspace_id), str(video_id), str(variant)),
-        )
-        return cur.fetchone()
+    Return the latest run for (workspace, video, variant) or None.
+
+    Used by main_worker to decide if it should attach to an existing run
+    or bootstrap a new run via start_video_run().
+    """
+    with _video_conn() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT id,
+                       workspace_id,
+                       video_id,
+                       variant,
+                       run_id,
+                       status,
+                       expected_snapshots,
+                       processed_snapshots,
+                       processed_ok,
+                       processed_err,
+                       run_started_at,
+                       run_finished_at,
+                       last_snapshot_at,
+                       error_msg
+                  FROM video_analyses
+                 WHERE workspace_id = :wid
+                   AND video_id     = :vid
+                   AND variant      = :variant
+                 ORDER BY updated_at DESC,
+                          run_started_at DESC NULLS LAST,
+                          created_at DESC
+                 LIMIT 1
+                """
+            ),
+            {"wid": workspace_id, "vid": video_id, "variant": variant},
+        ).mappings().first()
+
+    if not row:
+        return None
+
+    return {
+        "analysis_id": str(row["id"]),
+        "workspace_id": str(row["workspace_id"]),
+        "video_id": str(row["video_id"]),
+        "variant": row["variant"],
+        "run_id": str(row["run_id"]) if row["run_id"] else None,
+        "status": row["status"],
+        "expected_snapshots": row["expected_snapshots"],
+        "processed_snapshots": row["processed_snapshots"],
+        "processed_ok": row["processed_ok"],
+        "processed_err": row["processed_err"],
+        "run_started_at": row["run_started_at"],
+        "run_finished_at": row["run_finished_at"],
+        "last_snapshot_at": row["last_snapshot_at"],
+        "error_msg": row["error_msg"],
+    }
 
 
 def set_video_expected(analysis_id: str, expected: int) -> None:
-    sql = """
-    UPDATE video_analyses
-    SET expected_snapshots=%s, updated_at=NOW()
-    WHERE id::text=%s;
     """
-    with _connect() as conn, conn.cursor() as cur:
-        cur.execute(sql, (int(expected), str(analysis_id)))
-        conn.commit()
+    Set expected_snapshots for a run and ensure status is at least 'running'.
+
+    Called once at the end of YOLO worker processing, after counting how many
+    snapshots were emitted.
+    """
+    with _video_conn() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE video_analyses
+                   SET expected_snapshots = :expected,
+                       status             = CASE
+                                               WHEN status IS NULL THEN 'running'
+                                               WHEN status = 'queued' THEN 'running'
+                                               ELSE status
+                                             END,
+                       updated_at         = now()
+                 WHERE id = :aid
+                """
+            ),
+            {"aid": analysis_id, "expected": int(expected)},
+        )
 
 
 def upsert_video_detection_and_progress(
@@ -620,128 +685,188 @@ def upsert_video_detection_and_progress(
     payload: Dict[str, Any],
 ) -> None:
     """
-    Upsert ONE per-track row and update parent progress counters atomically.
-    IMPORTANT: counters increment only on FIRST insert (not on duplicate redelivery).
-    """
-    sql = """
-    WITH ins AS (
-      INSERT INTO video_detections (
-        analysis_id, run_id, track_id,
-        snapshot_s3_key, detected_in_ms, detected_at, yolo_type,
-        type_label, type_conf,
-        make_label, make_conf,
-        model_label, model_conf,
-        plate_text, plate_conf,
-        colors, assets,
-        latency_ms, memory_gb,
-        status, error_msg,
-        created_at, updated_at
-      )
-      VALUES (
-        %(analysis_id)s, %(run_id)s, %(track_id)s,
-        %(snapshot_s3_key)s, %(detected_in_ms)s, %(detected_at)s, %(yolo_type)s,
-        %(type_label)s, %(type_conf)s,
-        %(make_label)s, %(make_conf)s,
-        %(model_label)s, %(model_conf)s,
-        %(plate_text)s, %(plate_conf)s,
-        %(colors)s, %(assets)s,
-        %(latency_ms)s, %(memory_gb)s,
-        %(status)s, %(error_msg)s,
-        NOW(), NOW()
-      )
-      ON CONFLICT (analysis_id, run_id, track_id)
-      DO UPDATE SET
-        snapshot_s3_key = EXCLUDED.snapshot_s3_key,
-        detected_in_ms  = EXCLUDED.detected_in_ms,
-        detected_at     = EXCLUDED.detected_at,
-        yolo_type       = EXCLUDED.yolo_type,
-        type_label      = EXCLUDED.type_label,
-        type_conf       = EXCLUDED.type_conf,
-        make_label      = EXCLUDED.make_label,
-        make_conf       = EXCLUDED.make_conf,
-        model_label     = EXCLUDED.model_label,
-        model_conf      = EXCLUDED.model_conf,
-        plate_text      = EXCLUDED.plate_text,
-        plate_conf      = EXCLUDED.plate_conf,
-        colors          = EXCLUDED.colors,
-        assets          = EXCLUDED.assets,
-        latency_ms      = EXCLUDED.latency_ms,
-        memory_gb       = EXCLUDED.memory_gb,
-        status          = EXCLUDED.status,
-        error_msg       = EXCLUDED.error_msg,
-        updated_at      = NOW()
-      RETURNING (xmax = 0) AS inserted
-    ),
-    prog AS (
-      UPDATE video_analyses
-      SET
-        processed_snapshots = processed_snapshots
-          + CASE WHEN (SELECT inserted FROM ins) THEN 1 ELSE 0 END,
-        processed_ok = processed_ok
-          + CASE WHEN (SELECT inserted FROM ins) AND %(status)s='done' THEN 1 ELSE 0 END,
-        processed_err = processed_err
-          + CASE WHEN (SELECT inserted FROM ins) AND %(status)s='error' THEN 1 ELSE 0 END,
-        last_snapshot_at = NOW(),
-        updated_at = NOW()
-      WHERE id::text = %(analysis_id)s
-      RETURNING expected_snapshots, processed_snapshots, processed_ok
-    )
-    UPDATE video_analyses
-    SET
-      status = CASE
-        WHEN (SELECT expected_snapshots FROM prog) IS NOT NULL
-         AND (SELECT processed_snapshots FROM prog) >= (SELECT expected_snapshots FROM prog)
-        THEN CASE WHEN (SELECT processed_ok FROM prog) > 0 THEN 'done' ELSE 'error' END
-        ELSE status
-      END,
-      run_finished_at = CASE
-        WHEN (SELECT expected_snapshots FROM prog) IS NOT NULL
-         AND (SELECT processed_snapshots FROM prog) >= (SELECT expected_snapshots FROM prog)
-        THEN NOW()
-        ELSE run_finished_at
-      END,
-      updated_at = NOW()
-    WHERE id::text = %(analysis_id)s;
-    """
+    Idempotent upsert into video_detections + progress update in video_analyses.
 
-    t = payload.get("type") or {}
-    m = payload.get("make") or {}
-    mm = payload.get("model") or {}
-    p = payload.get("plate") or {}
+    • Uses (analysis_id, run_id, track_id) as a natural key.
+    • Safe on SQS retries (same triplet won't double-count).
+    """
+    det_id = str(uuid.uuid4())
+
+    type_obj = payload.get("type") or {}
+    make_obj = payload.get("make") or {}
+    model_obj = payload.get("model") or {}
+    plate_obj = payload.get("plate") or {}
+
     colors = payload.get("colors") or []
     assets = payload.get("assets") or {}
 
-    params = {
-        "analysis_id": str(analysis_id),
-        "run_id": str(run_id),
-        "track_id": int(track_id),
-        "snapshot_s3_key": str(payload.get("snapshot_s3_key")),
-        "detected_in_ms": int(payload.get("detected_in_ms") or 0),
-        "detected_at": payload.get("detected_at"),
-        "yolo_type": payload.get("yolo_type"),
-        "type_label": t.get("label"),
-        "type_conf": float(t.get("conf")) if t.get("conf") is not None else None,
-        "make_label": m.get("label"),
-        "make_conf": float(m.get("conf")) if m.get("conf") is not None else None,
-        "model_label": mm.get("label"),
-        "model_conf": float(mm.get("conf")) if mm.get("conf") is not None else None,
-        "plate_text": p.get("text"),
-        "plate_conf": float(p.get("conf")) if p.get("conf") is not None else None,
-        "colors": PgJson(colors),
-        "assets": PgJson(assets),
-        "latency_ms": int(payload.get("latency_ms") or 0),
-        "memory_gb": (
-            float(payload.get("memory_gb"))
-            if payload.get("memory_gb") is not None
-            else None
-        ),
-        "status": str(payload.get("status") or "done"),
-        "error_msg": payload.get("error_msg"),
-    }
+    status = payload.get("status") or "done"
+    error_msg = payload.get("error_msg")
 
-    with _connect() as conn, conn.cursor() as cur:
-        cur.execute(sql, params)
-        conn.commit()
+    with _video_conn() as conn:
+        # 1) Upsert detection row
+        conn.execute(
+            text(
+                """
+                INSERT INTO video_detections (
+                    id,
+                    analysis_id,
+                    run_id,
+                    track_id,
+                    snapshot_s3_key,
+                    yolo_type,
+                    type_label,
+                    type_conf,
+                    make_label,
+                    make_conf,
+                    model_label,
+                    model_conf,
+                    plate_text,
+                    plate_conf,
+                    colors,
+                    assets,
+                    detected_in_ms,
+                    detected_at,
+                    latency_ms,
+                    memory_gb,
+                    status,
+                    error_msg,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    :id,
+                    :aid,
+                    :run_id,
+                    :track_id,
+                    :snapshot_s3_key,
+                    :yolo_type,
+                    :type_label,
+                    :type_conf,
+                    :make_label,
+                    :make_conf,
+                    :model_label,
+                    :model_conf,
+                    :plate_text,
+                    :plate_conf,
+                    :colors,
+                    :assets,
+                    :detected_in_ms,
+                    :detected_at,
+                    :latency_ms,
+                    :memory_gb,
+                    :status,
+                    :error_msg,
+                    now(),
+                    now()
+                )
+                ON CONFLICT (analysis_id, run_id, track_id)
+                DO UPDATE SET
+                    snapshot_s3_key = EXCLUDED.snapshot_s3_key,
+                    yolo_type       = EXCLUDED.yolo_type,
+                    type_label      = EXCLUDED.type_label,
+                    type_conf       = EXCLUDED.type_conf,
+                    make_label      = EXCLUDED.make_label,
+                    make_conf       = EXCLUDED.make_conf,
+                    model_label     = EXCLUDED.model_label,
+                    model_conf      = EXCLUDED.model_conf,
+                    plate_text      = EXCLUDED.plate_text,
+                    plate_conf      = EXCLUDED.plate_conf,
+                    colors          = EXCLUDED.colors,
+                    assets          = EXCLUDED.assets,
+                    detected_in_ms  = EXCLUDED.detected_in_ms,
+                    detected_at     = EXCLUDED.detected_at,
+                    latency_ms      = EXCLUDED.latency_ms,
+                    memory_gb       = EXCLUDED.memory_gb,
+                    status          = EXCLUDED.status,
+                    error_msg       = EXCLUDED.error_msg,
+                    updated_at      = now()
+                """
+            ),
+            {
+                "id": det_id,
+                "aid": analysis_id,
+                "run_id": run_id,
+                "track_id": int(track_id),
+                "snapshot_s3_key": payload.get("snapshot_s3_key"),
+                "yolo_type": payload.get("yolo_type"),
+                "type_label": type_obj.get("label"),
+                "type_conf": type_obj.get("conf"),
+                "make_label": make_obj.get("label"),
+                "make_conf": make_obj.get("conf"),
+                "model_label": model_obj.get("label"),
+                "model_conf": model_obj.get("conf"),
+                "plate_text": plate_obj.get("text"),
+                "plate_conf": plate_obj.get("conf"),
+                "colors": colors,
+                "assets": assets,
+                "detected_in_ms": payload.get("detected_in_ms"),
+                "detected_at": payload.get("detected_at"),
+                "latency_ms": payload.get("latency_ms"),
+                "memory_gb": payload.get("memory_gb"),
+                "status": status,
+                "error_msg": error_msg,
+            },
+        )
+
+        # 2) Recompute per-run stats
+        agg = conn.execute(
+            text(
+                """
+                SELECT COUNT(*) AS total,
+                       SUM(CASE WHEN status = 'done' AND error_msg IS NULL
+                                THEN 1 ELSE 0 END) AS ok,
+                       SUM(CASE WHEN status <> 'done' OR error_msg IS NOT NULL
+                                THEN 1 ELSE 0 END) AS err,
+                       MAX(detected_at) AS last_snapshot_at
+                  FROM video_detections
+                 WHERE analysis_id = :aid
+                   AND run_id      = :run_id
+                """
+            ),
+            {"aid": analysis_id, "run_id": run_id},
+        ).mappings().first()
+
+        total = int(agg["total"] or 0)
+        ok = int(agg["ok"] or 0)
+        err = int(agg["err"] or 0)
+        last_snapshot_at = agg["last_snapshot_at"]
+
+        # 3) Update video_analyses progress
+        conn.execute(
+            text(
+                """
+                UPDATE video_analyses
+                   SET processed_snapshots = :total,
+                       processed_ok        = :ok,
+                       processed_err       = :err,
+                       last_snapshot_at    = COALESCE(:last_snapshot_at, last_snapshot_at),
+                       status              = CASE
+                                               WHEN expected_snapshots IS NOT NULL
+                                                AND expected_snapshots > 0
+                                                AND :total >= expected_snapshots
+                                               THEN 'done'
+                                               ELSE 'running'
+                                             END,
+                       run_finished_at     = CASE
+                                               WHEN expected_snapshots IS NOT NULL
+                                                AND expected_snapshots > 0
+                                                AND :total >= expected_snapshots
+                                               THEN COALESCE(run_finished_at, now())
+                                               ELSE run_finished_at
+                                             END,
+                       updated_at          = now()
+                 WHERE id = :aid
+                """
+            ),
+            {
+                "aid": analysis_id,
+                "total": total,
+                "ok": ok,
+                "err": err,
+                "last_snapshot_at": last_snapshot_at,
+            },
+        )
 
 
 # ============================ Key / Path Builders =========================== #
@@ -916,3 +1041,196 @@ __all__ = [
     "s3_uri",
 ]
 
+
+# ==== Patch 2025-11-28 — Override upsert_video_detection_and_progress to JSON-encode colors/assets ====
+def upsert_video_detection_and_progress(
+    analysis_id: str,
+    run_id: str,
+    track_id: int,
+    payload: Dict[str, Any],
+) -> None:
+    """
+    Idempotent upsert into video_detections + progress update in video_analyses.
+
+    Patched version:
+    • Same semantics as the original function.
+    • colors / assets are JSON-encoded before sending to the DB to avoid
+      psycopg2 "can't adapt type 'dict'" errors when using SQLAlchemy text().
+    """
+    det_id = str(uuid.uuid4())
+
+    type_obj = payload.get("type") or {}
+    make_obj = payload.get("make") or {}
+    model_obj = payload.get("model") or {}
+    plate_obj = payload.get("plate") or {}
+
+    colors = payload.get("colors") or []
+    assets = payload.get("assets") or {}
+
+    status = payload.get("status") or "done"
+    error_msg = payload.get("error_msg")
+
+    with _video_conn() as conn:
+        # 1) Upsert detection row
+        conn.execute(
+            text(
+                """
+                INSERT INTO video_detections (
+                    id,
+                    analysis_id,
+                    run_id,
+                    track_id,
+                    snapshot_s3_key,
+                    yolo_type,
+                    type_label,
+                    type_conf,
+                    make_label,
+                    make_conf,
+                    model_label,
+                    model_conf,
+                    plate_text,
+                    plate_conf,
+                    colors,
+                    assets,
+                    detected_in_ms,
+                    detected_at,
+                    latency_ms,
+                    memory_gb,
+                    status,
+                    error_msg,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    :id,
+                    :aid,
+                    :run_id,
+                    :track_id,
+                    :snapshot_s3_key,
+                    :yolo_type,
+                    :type_label,
+                    :type_conf,
+                    :make_label,
+                    :make_conf,
+                    :model_label,
+                    :model_conf,
+                    :plate_text,
+                    :plate_conf,
+                    :colors,
+                    :assets,
+                    :detected_in_ms,
+                    :detected_at,
+                    :latency_ms,
+                    :memory_gb,
+                    :status,
+                    :error_msg,
+                    now(),
+                    now()
+                )
+                ON CONFLICT (analysis_id, run_id, track_id)
+                DO UPDATE SET
+                    snapshot_s3_key = EXCLUDED.snapshot_s3_key,
+                    yolo_type       = EXCLUDED.yolo_type,
+                    type_label      = EXCLUDED.type_label,
+                    type_conf       = EXCLUDED.type_conf,
+                    make_label      = EXCLUDED.make_label,
+                    make_conf       = EXCLUDED.make_conf,
+                    model_label     = EXCLUDED.model_label,
+                    model_conf      = EXCLUDED.model_conf,
+                    plate_text      = EXCLUDED.plate_text,
+                    plate_conf      = EXCLUDED.plate_conf,
+                    colors          = EXCLUDED.colors,
+                    assets          = EXCLUDED.assets,
+                    detected_in_ms  = EXCLUDED.detected_in_ms,
+                    detected_at     = EXCLUDED.detected_at,
+                    latency_ms      = EXCLUDED.latency_ms,
+                    memory_gb       = EXCLUDED.memory_gb,
+                    status          = EXCLUDED.status,
+                    error_msg       = EXCLUDED.error_msg,
+                    updated_at      = now()
+                """
+            ),
+            {
+                "id": det_id,
+                "aid": analysis_id,
+                "run_id": run_id,
+                "track_id": int(track_id),
+                "snapshot_s3_key": payload.get("snapshot_s3_key"),
+                "yolo_type": payload.get("yolo_type"),
+                "type_label": type_obj.get("label"),
+                "type_conf": type_obj.get("conf"),
+                "make_label": make_obj.get("label"),
+                "make_conf": make_obj.get("conf"),
+                "model_label": model_obj.get("label"),
+                "model_conf": model_obj.get("conf"),
+                "plate_text": plate_obj.get("text"),
+                "plate_conf": plate_obj.get("conf"),
+                "colors": json.dumps(colors),
+                "assets": json.dumps(assets),
+                "detected_in_ms": payload.get("detected_in_ms"),
+                "detected_at": payload.get("detected_at"),
+                "latency_ms": payload.get("latency_ms"),
+                "memory_gb": payload.get("memory_gb"),
+                "status": status,
+                "error_msg": error_msg,
+            },
+        )
+
+        # 2) Recompute per-run stats
+        agg = conn.execute(
+            text(
+                """
+                SELECT COUNT(*) AS total,
+                       SUM(CASE WHEN status = 'done' AND error_msg IS NULL
+                                THEN 1 ELSE 0 END) AS ok,
+                       SUM(CASE WHEN status <> 'done' OR error_msg IS NOT NULL
+                                THEN 1 ELSE 0 END) AS err,
+                       MAX(detected_at) AS last_snapshot_at
+                  FROM video_detections
+                 WHERE analysis_id = :aid
+                   AND run_id      = :run_id
+                """
+            ),
+            {"aid": analysis_id, "run_id": run_id},
+        ).mappings().first()
+
+        total = int(agg["total"] or 0)
+        ok = int(agg["ok"] or 0)
+        err = int(agg["err"] or 0)
+        last_snapshot_at = agg["last_snapshot_at"]
+
+        # 3) Update video_analyses progress
+        conn.execute(
+            text(
+                """
+                UPDATE video_analyses
+                   SET processed_snapshots = :total,
+                       processed_ok        = :ok,
+                       processed_err       = :err,
+                       last_snapshot_at    = COALESCE(:last_snapshot_at, last_snapshot_at),
+                       status              = CASE
+                                               WHEN expected_snapshots IS NOT NULL
+                                                AND expected_snapshots > 0
+                                                AND :total >= expected_snapshots
+                                               THEN 'done'
+                                               ELSE 'running'
+                                             END,
+                       run_finished_at     = CASE
+                                               WHEN expected_snapshots IS NOT NULL
+                                                AND expected_snapshots > 0
+                                                AND :total >= expected_snapshots
+                                               THEN COALESCE(run_finished_at, now())
+                                               ELSE run_finished_at
+                                             END,
+                       updated_at          = now()
+                 WHERE id = :aid
+                """
+            ),
+            {
+                "aid": analysis_id,
+                "total": total,
+                "ok": ok,
+                "err": err,
+                "last_snapshot_at": last_snapshot_at,
+            },
+        )

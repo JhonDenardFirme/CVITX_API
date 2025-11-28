@@ -473,6 +473,12 @@ def _process_one_video(body: Dict[str, Any]) -> int:
         vrow = get_video_by_id(payload["video_id"])
         variant = str(payload.get("variant") or "cmt")
         run_id = str(payload.get("run_id") or uuid.uuid4())
+
+        # Patch C.1 — normalize recorded_at to ISO string for PROCESS_VIDEO_DB
+        recorded_at = vrow.get("recorded_at")
+        if recorded_at is not None and hasattr(recorded_at, "isoformat"):
+            recorded_at = recorded_at.isoformat()
+
         full = {
             "event": "PROCESS_VIDEO",
             "video_id": payload["video_id"],
@@ -483,7 +489,7 @@ def _process_one_video(body: Dict[str, Any]) -> int:
             "frame_stride": int(
                 vrow.get("frame_stride") or int(CONFIG["FRAME_STRIDE_DEFAULT"])
             ),
-            "recordedAt": vrow.get("recorded_at"),
+            "recordedAt": recorded_at,
             "variant": variant,
             "run_id": run_id,
         }
