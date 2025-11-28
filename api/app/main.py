@@ -62,8 +62,10 @@ from app.routes import workspace_videos
 app.include_router(workspace_videos.router)
 # --- END add: workspace videos router ---
 
-from app.routes import analyses
+from app.routes import analyses, video_uploads, video_analysis
 app.include_router(analyses.router)
+app.include_router(video_uploads.router)
+app.include_router(video_analysis.router)
 
 # --- Basic rate limiting (SlowAPI) ---
 from slowapi import Limiter
@@ -94,3 +96,4 @@ if _ORIGINS:
         expose_headers=["*"]
     )
 # ----------------------
+
