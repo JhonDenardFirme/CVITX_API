@@ -1,5 +1,3 @@
-# File: api/app/routes/video_analysis.py
-
 import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -115,6 +113,9 @@ class VideoRowOut(BaseModel):
     status: str
     createdAt: Optional[datetime] = None
     updatedAt: Optional[datetime] = None
+    errorMsg: Optional[str] = None
+    processingStartedAt: Optional[datetime] = None
+    processingFinishedAt: Optional[datetime] = None
 
 
 class VideoRunSummary(BaseModel):
@@ -172,6 +173,11 @@ class DetectionAssets(BaseModel):
     plateUrl: Optional[str] = None
 
 
+class PartEvidence(BaseModel):
+    name: str
+    conf: float
+
+
 class DetectionOut(BaseModel):
     id: str
     analysisId: str
@@ -188,6 +194,7 @@ class DetectionOut(BaseModel):
     plateText: Optional[str] = None
     plateConf: Optional[float] = None
     colors: List[ColorFBL] = []
+    parts: List[PartEvidence] = []
     latencyMs: Optional[int] = None
     memoryGb: Optional[float] = None
     status: str
@@ -205,13 +212,9 @@ class DetectionListOut(BaseModel):
 
 class DetectionUpdateIn(BaseModel):
     typeLabel: Optional[str] = None
-    typeConf: Optional[float] = None
     makeLabel: Optional[str] = None
-    makeConf: Optional[float] = None
     modelLabel: Optional[str] = None
-    modelConf: Optional[float] = None
     plateText: Optional[str] = None
-    plateConf: Optional[float] = None
     colors: Optional[List[ColorFBL]] = None
 
 
@@ -245,7 +248,10 @@ def get_video_detail(
                        frame_stride,
                        status,
                        created_at,
-                       updated_at
+                       updated_at,
+                       error_msg,
+                       processing_started_at,
+                       processing_finished_at
                   FROM videos
                  WHERE id = :vid
                    AND workspace_id = :wid
@@ -295,6 +301,9 @@ def get_video_detail(
         status=v["status"],
         createdAt=v.get("created_at"),
         updatedAt=v.get("updated_at"),
+        errorMsg=v.get("error_msg"),
+        processingStartedAt=v.get("processing_started_at"),
+        processingFinishedAt=v.get("processing_finished_at"),
     )
 
     latest_run: Optional[VideoRunSummary] = None
@@ -523,9 +532,10 @@ def list_video_detections(
                        plate_text,
                        plate_conf,
                        colors,
+                       parts,
                        assets,
                        latency_ms,
-                       memory_gb,
+                       memory_usage AS memory_gb,
                        status,
                        error_msg
                   FROM video_detections
@@ -539,7 +549,8 @@ def list_video_detections(
 
     items: List[DetectionOut] = []
     for r in rows:
-        colors = r.get("colors") or []
+        colors_raw = r.get("colors") or []
+        parts_raw = r.get("parts") or []
         assets_raw = r.get("assets") or {}
 
         items.append(
@@ -558,7 +569,8 @@ def list_video_detections(
                 modelConf=r.get("model_conf"),
                 plateText=r.get("plate_text"),
                 plateConf=r.get("plate_conf"),
-                colors=[ColorFBL(**c) for c in colors],
+                colors=[ColorFBL(**c) for c in colors_raw],
+                parts=[PartEvidence(**p) for p in parts_raw],
                 latencyMs=r.get("latency_ms"),
                 memoryGb=r.get("memory_gb"),
                 status=r["status"],
@@ -621,9 +633,10 @@ def get_video_detection(
                        d.plate_text,
                        d.plate_conf,
                        d.colors,
+                       d.parts,
                        d.assets,
                        d.latency_ms,
-                       d.memory_gb,
+                       d.memory_usage AS memory_gb,
                        d.status,
                        d.error_msg
                   FROM video_detections d
@@ -640,7 +653,8 @@ def get_video_detection(
     if not r:
         raise HTTPException(status_code=404, detail="Detection not found")
 
-    colors = r.get("colors") or []
+    colors_raw = r.get("colors") or []
+    parts_raw = r.get("parts") or []
     assets_raw = r.get("assets") or {}
 
     if presign:
@@ -670,7 +684,8 @@ def get_video_detection(
         modelConf=r.get("model_conf"),
         plateText=r.get("plate_text"),
         plateConf=r.get("plate_conf"),
-        colors=[ColorFBL(**c) for c in colors],
+        colors=[ColorFBL(**c) for c in colors_raw],
+        parts=[PartEvidence(**p) for p in parts_raw],
         latencyMs=r.get("latency_ms"),
         memoryGb=r.get("memory_gb"),
         status=r["status"],
@@ -697,12 +712,14 @@ def update_video_detection(
     """
     Partial update endpoint for manual corrections:
 
-    - Editable: typeLabel/Conf, makeLabel/Conf, modelLabel/Conf,
-      plateText/Conf, colors.
+    - Editable: typeLabel, makeLabel, modelLabel, plateText, colors.
+    - When labels or plate text are edited, their *_conf fields are set to 0.0
+      to indicate that the values are no longer pure AI predictions.
     """
     data = body.dict(exclude_unset=True)
+
+    # If nothing to update; just return current snapshot
     if not data:
-        # Nothing to update; just return current
         return get_video_detection(
             workspace_id=workspace_id,
             video_id=video_id,
@@ -712,25 +729,34 @@ def update_video_detection(
             me=me,  # type: ignore[arg-type]
         )
 
-    field_map = {
-        "typeLabel": "type_label",
-        "typeConf": "type_conf",
-        "makeLabel": "make_label",
-        "makeConf": "make_conf",
-        "modelLabel": "model_label",
-        "modelConf": "model_conf",
-        "plateText": "plate_text",
-        "plateConf": "plate_conf",
-        "colors": "colors",
-    }
-
     set_clauses: List[str] = []
     params: Dict[str, Any] = {"det_id": detection_id}
 
-    for json_field, column in field_map.items():
-        if json_field in data:
-            set_clauses.append(f"{column} = :{json_field}")
-            params[json_field] = data[json_field]
+    # Manual overrides for labels and plate text: always zero confidence
+    if "typeLabel" in data:
+        set_clauses.append("type_label = :typeLabel")
+        set_clauses.append("type_conf = 0.0")
+        params["typeLabel"] = data["typeLabel"]
+
+    if "makeLabel" in data:
+        set_clauses.append("make_label = :makeLabel")
+        set_clauses.append("make_conf = 0.0")
+        params["makeLabel"] = data["makeLabel"]
+
+    if "modelLabel" in data:
+        set_clauses.append("model_label = :modelLabel")
+        set_clauses.append("model_conf = 0.0")
+        params["modelLabel"] = data["modelLabel"]
+
+    if "plateText" in data:
+        set_clauses.append("plate_text = :plateText")
+        set_clauses.append("plate_conf = 0.0")
+        params["plateText"] = data["plateText"]
+
+    # Colors remain directly editable as JSON
+    if "colors" in data:
+        set_clauses.append("colors = :colors")
+        params["colors"] = data["colors"]
 
     if not set_clauses:
         return get_video_detection(
@@ -742,7 +768,8 @@ def update_video_detection(
             me=me,  # type: ignore[arg-type]
         )
 
-    set_sql = ", ".join(set_clauses + ["updated_at = now()"])
+    set_clauses.append("updated_at = now()")
+    set_sql = ", ".join(set_clauses)
 
     with engine.begin() as conn:
         _assert_workspace(conn, workspace_id, str(me.id))
@@ -780,4 +807,3 @@ def update_video_detection(
         ttl=ANALYSIS_TTL_DEFAULT,
         me=me,  # type: ignore[arg-type]
     )
-

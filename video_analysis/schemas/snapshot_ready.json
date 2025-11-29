@@ -26,20 +26,23 @@
     "workspace_id": { "$ref": "#/$defs/uuid" },
     "workspace_code": {
       "type": "string",
-      "pattern": "^CTX\\d{4,}$"
+      "pattern": "^CTX\\d{4,}$",
+      "description": "Deterministic workspace code (e.g., CTX1026)."
     },
     "camera_code": {
       "type": "string",
-      "pattern": "^CAM\\d+$"
+      "minLength": 1,
+      "description": "Deterministic camera code (e.g., CAM-TEST-004)."
     },
     "track_id": {
       "type": "integer",
-      "minimum": 0
+      "minimum": 1,
+      "description": "1-based tracking ID for the vehicle trajectory."
     },
     "snapshot_s3_key": {
       "type": "string",
-      "description": "Either an S3 KEY (no scheme) or a full s3:// URI to the snapshot image.",
-      "pattern": "^(s3://[^/]+/)?demo_user/[0-9a-fA-F-]{36}/[0-9a-fA-F-]{36}/snapshots/CTX\\d{4,}_CAM\\d+_\\d{6}_\\d{6}\\.jpg$"
+      "description": "Full s3:// URI to the snapshot image.",
+      "pattern": "^s3://[^/]+/demo_user/[0-9a-fA-F-]{36}/[0-9a-fA-F-]{36}/snapshots/CTX\\d{4,}_[A-Za-z0-9-]+_\\d{6}_\\d{6}\\.jpg$"
     },
     "recordedAt": { "$ref": "#/$defs/iso_datetime_nullable" },
     "detectedIn": {
@@ -51,6 +54,13 @@
     "yolo_type": {
       "type": "string",
       "description": "Coarse vehicle type predicted by YOLO (e.g., Car, SUV, Bus)."
+    },
+    "variant": {
+      "type": "string",
+      "description": "Model variant associated with this run (e.g., 'baseline' or 'cmt')."
+    },
+    "run_id": {
+      "$ref": "#/$defs/uuid"
     }
   },
   "required": [
@@ -64,21 +74,26 @@
     "recordedAt",
     "detectedIn",
     "detectedAt",
-    "yolo_type"
+    "yolo_type",
+    "variant",
+    "run_id"
   ],
   "examples": [
     {
       "event": "SNAPSHOT_READY",
-      "video_id": "c03b34d8-9a6a-4701-998a-de9001fe2fa4",
+      "video_id": "7992c53b-1111-2222-3333-444455556666",
       "workspace_id": "8cdc46f9-12eb-4e07-ac44-f84dd1fdfb96",
-      "workspace_code": "CTX1005",
-      "camera_code": "CAM1",
-      "track_id": 305,
-      "snapshot_s3_key": "s3://cvitx-uploads-dev-jdfirme/demo_user/8cdc46f9-12eb-4e07-ac44-f84dd1fdfb96/c03b34d8-9a6a-4701-998a-de9001fe2fa4/snapshots/CTX1005_CAM1_000305_002272.jpg",
-      "recordedAt": null,
-      "detectedIn": 2272,
-      "detectedAt": null,
-      "yolo_type": "SUV"
+      "workspace_code": "CTX1026",
+      "camera_code": "CAM-TEST-004",
+      "track_id": 12,
+      "snapshot_s3_key": "s3://cvitx-uploads-dev-jdfirme/demo_user/8cdc46f9-12eb-4e07-ac44-f84dd1fdfb96/7992c53b-1111-2222-3333-444455556666/snapshots/CTX1026_CAM-TEST-004_000012_003000.jpg",
+      "recordedAt": "2025-10-31T12:15:00+08:00",
+      "detectedIn": 3000,
+      "detectedAt": "2025-10-31T12:15:03+08:00",
+      "yolo_type": "Car",
+      "variant": "cmt",
+      "run_id": "d8f6a2aa-aaaa-bbbb-cccc-ddddeeeeffff"
     }
   ]
 }
+

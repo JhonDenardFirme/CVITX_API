@@ -1,9 +1,7 @@
-# File: api/app/routes/video_uploads.py
-
 import os
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 import boto3
 from fastapi import APIRouter, Depends, HTTPException
@@ -71,6 +69,15 @@ class VideoCommitIn(BaseModel):
 
 class VideoEnqueueIn(BaseModel):
     variant: Optional[str] = "cmt"
+
+
+class VideoUpdateIn(BaseModel):
+    cameraLabel: Optional[str] = None
+    recordedAt: Optional[datetime] = None
+
+
+class DeleteVideoIn(BaseModel):
+    confirmCameraCode: str
 
 
 @router.post("/{workspace_id}/videos/presign")
@@ -272,7 +279,7 @@ def enqueue_video(
         if not v:
             raise HTTPException(status_code=404, detail="Video not found")
 
-        payload = {
+        payload: Dict[str, Any] = {
             "event": "PROCESS_VIDEO",
             "video_id": str(v["id"]),
             "workspace_id": str(v["workspace_id"]),
@@ -306,4 +313,263 @@ def enqueue_video(
         "queueUrl": SQS_VIDEO_QUEUE_URL,
         "status": "queued",
         "sqsResponse": resp,
+    }
+
+
+@router.patch("/{workspace_id}/videos/{video_id}")
+def update_video(
+    workspace_id: str,
+    video_id: str,
+    body: VideoUpdateIn,
+    me=Depends(require_user),
+):
+    """
+    Partial update for a video.
+
+    Allowed fields:
+    - cameraLabel -> videos.camera_label
+    - recordedAt  -> videos.recorded_at
+
+    All other columns remain unchanged.
+    """
+    data = body.dict(exclude_unset=True)
+
+    with engine.begin() as conn:
+        _assert_workspace(conn, workspace_id, str(me.id))
+
+        row = conn.execute(
+            text(
+                """
+                SELECT id,
+                       workspace_id,
+                       workspace_code,
+                       file_name,
+                       camera_label,
+                       camera_code,
+                       recorded_at,
+                       s3_key_raw,
+                       frame_stride,
+                       status,
+                       updated_at
+                  FROM videos
+                 WHERE id = :vid
+                   AND workspace_id = :wid
+                """
+            ),
+            {"vid": video_id, "wid": workspace_id},
+        ).mappings().first()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Video not found")
+
+        # If nothing to update, just return current snapshot
+        if not data:
+            return {
+                "video": {
+                    "id": row["id"],
+                    "workspaceId": row["workspace_id"],
+                    "workspaceCode": row.get("workspace_code"),
+                    "fileName": row["file_name"],
+                    "cameraLabel": row.get("camera_label"),
+                    "cameraCode": row["camera_code"],
+                    "recordedAt": row["recorded_at"].isoformat() if row["recorded_at"] else None,
+                    "s3KeyRaw": row["s3_key_raw"],
+                    "frameStride": row["frame_stride"],
+                    "status": row["status"],
+                    "updatedAt": row["updated_at"].isoformat() if row.get("updated_at") else None,
+                },
+                "autoEnqueued": False,
+            }
+
+        set_clauses: List[str] = []
+        params: Dict[str, Any] = {"vid": video_id, "wid": workspace_id}
+
+        if "cameraLabel" in data:
+            set_clauses.append("camera_label = :camera_label")
+            params["camera_label"] = data["cameraLabel"]
+
+        if "recordedAt" in data:
+            set_clauses.append("recorded_at = :recorded_at")
+            params["recorded_at"] = data["recordedAt"]
+
+        if not set_clauses:
+            return {
+                "video": {
+                    "id": row["id"],
+                    "workspaceId": row["workspace_id"],
+                    "workspaceCode": row.get("workspace_code"),
+                    "fileName": row["file_name"],
+                    "cameraLabel": row.get("camera_label"),
+                    "cameraCode": row["camera_code"],
+                    "recordedAt": row["recorded_at"].isoformat() if row["recorded_at"] else None,
+                    "s3KeyRaw": row["s3_key_raw"],
+                    "frameStride": row["frame_stride"],
+                    "status": row["status"],
+                    "updatedAt": row["updated_at"].isoformat() if row.get("updated_at") else None,
+                },
+                "autoEnqueued": False,
+            }
+
+        set_clauses.append("updated_at = now()")
+        update_sql = f"""
+            UPDATE videos
+               SET {", ".join(set_clauses)}
+             WHERE id = :vid
+               AND workspace_id = :wid
+        """
+
+        conn.execute(text(update_sql), params)
+
+        updated = conn.execute(
+            text(
+                """
+                SELECT id,
+                       workspace_id,
+                       workspace_code,
+                       file_name,
+                       camera_label,
+                       camera_code,
+                       recorded_at,
+                       s3_key_raw,
+                       frame_stride,
+                       status,
+                       updated_at
+                  FROM videos
+                 WHERE id = :vid
+                   AND workspace_id = :wid
+                """
+            ),
+            {"vid": video_id, "wid": workspace_id},
+        ).mappings().first()
+
+    return {
+        "video": {
+            "id": updated["id"],
+            "workspaceId": updated["workspace_id"],
+            "workspaceCode": updated.get("workspace_code"),
+            "fileName": updated["file_name"],
+            "cameraLabel": updated.get("camera_label"),
+            "cameraCode": updated["camera_code"],
+            "recordedAt": updated["recorded_at"].isoformat() if updated["recorded_at"] else None,
+            "s3KeyRaw": updated["s3_key_raw"],
+            "frameStride": updated["frame_stride"],
+            "status": updated["status"],
+            "updatedAt": updated["updated_at"].isoformat() if updated.get("updated_at") else None,
+        },
+        "autoEnqueued": False,
+    }
+
+
+@router.delete("/{workspace_id}/videos/{video_id}")
+def delete_video(
+    workspace_id: str,
+    video_id: str,
+    body: DeleteVideoIn,
+    me=Depends(require_user),
+):
+    """
+    Deletes a video and its downstream analysis rows.
+
+    Safety guard:
+    - Requires the caller to provide confirmCameraCode matching videos.camera_code.
+    - Refuses deletion if there are active analyses (processing/running).
+    """
+    with engine.begin() as conn:
+        _assert_workspace(conn, workspace_id, str(me.id))
+
+        video = conn.execute(
+            text(
+                """
+                SELECT id,
+                       workspace_id,
+                       camera_code,
+                       s3_key_raw
+                  FROM videos
+                 WHERE id = :vid
+                   AND workspace_id = :wid
+                """
+            ),
+            {"vid": video_id, "wid": workspace_id},
+        ).mappings().first()
+
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found")
+
+        if body.confirmCameraCode != video["camera_code"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Confirmation camera code does not match",
+            )
+
+        # Block deletion if there are active analyses
+        active = conn.execute(
+            text(
+                """
+                SELECT id
+                  FROM video_analyses
+                 WHERE video_id = :vid
+                   AND workspace_id = :wid
+                   AND status IN ('processing', 'running')
+                """
+            ),
+            {"vid": video_id, "wid": workspace_id},
+        ).fetchone()
+
+        if active:
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot delete video while analyses are still running",
+            )
+
+        # Gather analyses for cascade delete
+        analysis_ids: List[str] = [
+            row["id"]
+            for row in conn.execute(
+                text(
+                    """
+                    SELECT id
+                      FROM video_analyses
+                     WHERE video_id = :vid
+                       AND workspace_id = :wid
+                    """
+                ),
+                {"vid": video_id, "wid": workspace_id},
+            ).mappings()
+        ]
+
+        if analysis_ids:
+            conn.execute(
+                text("DELETE FROM video_detections WHERE analysis_id = ANY(:aids)"),
+                {"aids": analysis_ids},
+            )
+            conn.execute(
+                text("DELETE FROM video_analysis_results WHERE analysis_id = ANY(:aids)"),
+                {"aids": analysis_ids},
+            )
+            conn.execute(
+                text("DELETE FROM video_analyses WHERE id = ANY(:aids)"),
+                {"aids": analysis_ids},
+            )
+
+        conn.execute(
+            text(
+                """
+                DELETE FROM videos
+                 WHERE id = :vid
+                   AND workspace_id = :wid
+                """
+            ),
+            {"vid": video_id, "wid": workspace_id},
+        )
+
+    # Optionally clean up the raw S3 object (best-effort; ignore errors)
+    if video.get("s3_key_raw"):
+        try:
+            s3.delete_object(Bucket=settings.s3_bucket, Key=video["s3_key_raw"])
+        except Exception:
+            pass
+
+    return {
+        "videoId": str(video["id"]),
+        "deleted": True,
     }

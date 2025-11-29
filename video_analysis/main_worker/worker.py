@@ -17,7 +17,7 @@ import io
 import json
 import time
 import traceback
-from typing import Any, Dict, Tuple, Optional
+from typing import Any, Dict, Tuple, Optional, List
 from urllib.parse import urlparse
 
 from PIL import Image
@@ -34,6 +34,13 @@ from video_analysis.worker_utils.common import (
     set_video_analysis_status,
 )
 from video_analysis.worker_config import config_summary
+from video_analysis.main_worker.utils.contracts import coerce_fbl_colors
+
+# ----------------------------------------------------------------
+# Variant configuration (CMT main model)
+# ----------------------------------------------------------------
+VARIANT = "cmt"
+DEFAULT_VARIANT = VARIANT
 
 # ----------------------------------------------------------------
 # (AUTHORIZED CHANGE) CONFIG → ENV bridge for engine behavior parity
@@ -43,6 +50,7 @@ import os as _os
 # Snapshot/image size
 if "SNAPSHOT_SIZE" in CONFIG:
     _os.environ.setdefault("IMG_SIZE", str(int(CONFIG["SNAPSHOT_SIZE"])))
+
 
 # Feature toggles
 _os.environ.setdefault(
@@ -93,6 +101,56 @@ def _jpeg_bytes(img: Image.Image, q: int = 95) -> bytes:
     return buf.getvalue()
 
 
+def _normalize_parts(dets: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Canonical part evidence for video_detections.parts.
+
+    Rules:
+    - Accept dict or list inputs.
+    - Guarantee at least {name, conf} keys so Pydantic PartEvidence can parse.
+    - Preserve any extra keys (region, box, present, etc.) for richer UIs later.
+    """
+    raw = dets.get("parts") or []
+    out: List[Dict[str, Any]] = []
+
+    # Legacy dict style: { "Car_Front_Bumper": {conf: 0.87, ...}, ... }
+    if isinstance(raw, dict):
+        for name, p in raw.items():
+            if name is None:
+                continue
+            if isinstance(p, dict):
+                item = dict(p)
+                conf_val = p.get("conf", 0.0)
+            else:
+                item = {}
+                conf_val = p
+            try:
+                conf = float(conf_val or 0.0)
+            except Exception:
+                conf = 0.0
+            item["name"] = str(name)
+            item["conf"] = conf
+            out.append(item)
+        return out
+
+    # Canonical list style: [{name, conf, ...}, ...]
+    if isinstance(raw, list):
+        for p in raw:
+            if not isinstance(p, dict):
+                continue
+            item = dict(p)
+            name = item.get("name") or item.get("id") or "part"
+            try:
+                conf = float(item.get("conf", 0.0) or 0.0)
+            except Exception:
+                conf = 0.0
+            item["name"] = str(name)
+            item["conf"] = conf
+            out.append(item)
+
+    return out
+
+
 # ---- engine (ENV-driven, parity with image worker) --------------
 # IMPORTANT: use the same engine as image workers; it reads CMT_BUNDLE_PATH (DIRECTORY)
 from api.analysis import engine as E
@@ -102,10 +160,14 @@ from api.analysis import engine as E
 
 
 def _save_artifacts(
-    aid: str, wid: str, pil: Image.Image, dets: Dict[str, Any]
+    aid: str,
+    wid: str,
+    variant: str,
+    pil: Image.Image,
+    dets: Dict[str, Any],
 ) -> Dict[str, str]:
     out: Dict[str, str] = {}
-    prefix = f"{wid}/{aid}/main/"
+    prefix = f"{wid}/{aid}/{variant}/"
     try:
         try:
             # Reuse image worker helpers when present
@@ -161,6 +223,36 @@ def _save_artifacts(
     return out
 
 
+def _warm_model() -> None:
+    """
+    Best-effort CMT warmup, mirroring image_worker_cmt behavior.
+
+    - Tries engine.load_model(VARIANT) if available.
+    - Falls back to a tiny dummy inference so kernels are initialized.
+    """
+    try:
+        if hasattr(E, "load_model"):
+            E.load_model(VARIANT)
+            log.info("[warm] %s model loaded via engine.load_model", VARIANT)
+            return
+    except Exception as e:
+        log.warning("[warm] initial load failed (will try dummy): %s", e)
+
+    # Fallback dummy warmup
+    try:
+        img = Image.new("RGB", (64, 64), (110, 110, 110))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG")
+        _ = E.run_inference(
+            buf.getvalue(),
+            variant=VARIANT,
+            analysis_id="video_worker_warmup",
+        )
+        log.info("[warm] dummy warmup inference completed")
+    except Exception as e:
+        log.warning("[warm] dummy warmup failed: %s", e)
+
+
 # ---- main processing --------------------------------------------
 
 
@@ -185,8 +277,9 @@ def _process_one(msg_body: Dict[str, Any], receipt: str) -> None:
         snap = validate_snapshot_ready(msg_body)
         wid = snap["workspace_id"]
         vid = snap["video_id"]
-        variant = str(snap.get("variant") or "cmt")
+        variant = str(snap.get("variant") or DEFAULT_VARIANT)
         run_id = str(snap["run_id"])
+        track_id = int(snap["track_id"])
         bkt, key = _bucket_key(snap["snapshot_s3_key"])
 
         # 2) Canonical run lookup (or bootstrap fallback)
@@ -213,30 +306,28 @@ def _process_one(msg_body: Dict[str, Any], receipt: str) -> None:
         obj = s3.get_object(Bucket=bkt, Key=key)
         img_bytes = obj["Body"].read()
 
-        # Engine: warm or on-demand load of env-driven CMT bundle (DIRECTORY)
-        try:
-            if hasattr(E, "load_model"):
-                E.load_model("cmt")
-        except Exception as e:
-            log.warning(
-                "[warm] load failed (continuing, will retry if needed): %s", e
-            )
-
         dets, timings, metrics = E.run_inference(
             img_bytes,
-            variant="cmt",
-            analysis_id=f"vid_{aid}",
+            variant=variant,
+            analysis_id=f"vid_{aid}_t{track_id}_{variant}",
         )
 
         # 5) Optional artifacts
         assets: Dict[str, str] = {}
         try:
             pil = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-            assets = _save_artifacts(aid, wid, pil, dets)
+            assets = _save_artifacts(aid, wid, variant, pil, dets)
         except Exception as e:
             log.warning("artifact_io: %s", e)
 
         # 6) Build per-track payload (one row per vehicle/track)
+
+        # Canonical part evidence, aligned with image-analysis semantics.
+        parts_list = _normalize_parts(dets)
+
+        # Normalize colors into FBL-style objects (finish/base/lightness/conf)
+        fbl_colors = coerce_fbl_colors(dets)
+
         per_track: Dict[str, Any] = {
             "snapshot_s3_key": f"s3://{bkt}/{key}",
             "detected_in_ms": int(snap.get("detectedIn") or 0),
@@ -249,7 +340,9 @@ def _process_one(msg_body: Dict[str, Any], receipt: str) -> None:
                 "text": dets.get("plate_text"),
                 "conf": dets.get("plate_conf"),
             },
-            "colors": (dets.get("colors") or [])[:3],
+            # Store FBL-style colors (finish/base/lightness/conf) in DB
+            "colors": [c.model_dump(mode="python") for c in fbl_colors][:3],
+            "parts": parts_list,
             "assets": assets,
             "latency_ms": int(
                 (metrics.get("latency_ms") or timings.get("total") or 0.0)
@@ -263,15 +356,16 @@ def _process_one(msg_body: Dict[str, Any], receipt: str) -> None:
         upsert_video_detection_and_progress(
             analysis_id=aid,
             run_id=run_id,
-            track_id=int(snap["track_id"]),
+            track_id=track_id,
             payload=per_track,
         )
 
         log.info(
-            "[upsert] aid=%s variant=%s track=%s type=%s make=%s model=%s | %s",
+            "[upsert] aid=%s run_id=%s variant=%s track=%s type=%s make=%s model=%s | %s",
             aid,
+            run_id,
             variant,
-            snap["track_id"],
+            track_id,
             per_track["type"]["label"],
             per_track["make"]["label"],
             per_track["model"]["label"],
@@ -322,12 +416,7 @@ def main() -> None:
     )
 
     # Preload bundle once (best-effort, env-driven directory)
-    try:
-        if hasattr(E, "load_model"):
-            E.load_model("cmt")
-            log.info("[warm] CMT model loaded (env-driven bundle).")
-    except Exception as e:
-        log.warning("[warm] initial load failed (lazy on-demand): %s", e)
+    _warm_model()
 
     if not Q_SNAPSHOT:
         log.error("No SQS_SNAPSHOT_QUEUE_URL configured in code.")

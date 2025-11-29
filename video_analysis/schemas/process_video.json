@@ -25,14 +25,22 @@
     "video_id": { "$ref": "#/$defs/uuid" },
     "workspace_id": { "$ref": "#/$defs/uuid" },
     "workspace_code": {
-      "type": "string",
-      "pattern": "^CTX\\d{4,}$",
-      "description": "Deterministic workspace code (e.g., CTX1005)"
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^CTX\\d{4,}$",
+          "description": "Deterministic workspace code (e.g., CTX1005)"
+        },
+        {
+          "type": "null",
+          "description": "Nullable for legacy rows without workspace_code"
+        }
+      ]
     },
     "camera_code": {
       "type": "string",
-      "pattern": "^CAM\\d+$",
-      "description": "Deterministic camera code (e.g., CAM1)"
+      "minLength": 1,
+      "description": "Deterministic camera code (e.g., CAM-TEST-004)"
     },
     "s3_key_raw": {
       "type": "string",
@@ -44,13 +52,23 @@
       "minimum": 1,
       "description": "Decode every Nth frame (>=1). If missing upstream, API must supply a default."
     },
-    "recordedAt": { "$ref": "#/$defs/iso_datetime_nullable" }
+    "recordedAt": { "$ref": "#/$defs/iso_datetime_nullable" },
+    "variant": {
+      "type": "string",
+      "description": "Model variant (e.g., 'baseline' or 'cmt'). Defaults to 'cmt'."
+    },
+    "run_id": {
+      "oneOf": [
+        { "$ref": "#/$defs/uuid" },
+        { "type": "null" }
+      ],
+      "description": "Optional logical run identifier, assigned by the worker if omitted."
+    }
   },
   "required": [
     "event",
     "video_id",
     "workspace_id",
-    "workspace_code",
     "camera_code",
     "s3_key_raw",
     "frame_stride",
@@ -59,14 +77,17 @@
   "examples": [
     {
       "event": "PROCESS_VIDEO",
-      "video_id": "c03b34d8-9a6a-4701-998a-de9001fe2fa4",
+      "video_id": "7992c53b-1111-2222-3333-444455556666",
       "workspace_id": "8cdc46f9-12eb-4e07-ac44-f84dd1fdfb96",
-      "workspace_code": "CTX1005",
-      "camera_code": "CAM1",
-      "s3_key_raw": "demo_user/8cdc46f9-12eb-4e07-ac44-f84dd1fdfb96/c03b34d8-9a6a-4701-998a-de9001fe2fa4/raw/CCTV_Test1.mp4",
+      "workspace_code": "CTX1026",
+      "camera_code": "CAM-TEST-004",
+      "s3_key_raw": "demo_user/8cdc46f9-12eb-4e07-ac44-f84dd1fdfb96/7992c53b-1111-2222-3333-444455556666/raw/test-4.mp4",
       "frame_stride": 3,
-      "recordedAt": null
+      "recordedAt": "2025-10-31T12:15:00+08:00",
+      "variant": "cmt",
+      "run_id": null
     }
   ],
   "$comment_aws": "================================================================================\nNO AWS SETUP REQUIRED FOR THIS FILE (Schema only; used by validators).\n================================================================================"
 }
+

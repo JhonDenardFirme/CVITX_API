@@ -18,6 +18,7 @@ class ContractError(Exception):
 
 # ----------------------------- ANALYZE_IMAGE (compat) -----------------------------
 
+
 def parse_analyze_image_message(body: str) -> Dict[str, Any]:
     try:
         d = json.loads(body)
@@ -32,11 +33,14 @@ def parse_analyze_image_message(body: str) -> Dict[str, Any]:
     if d["event"] != "ANALYZE_IMAGE":
         raise ContractError(f"Unexpected event: {d['event']}")
     if not ("input_image_s3_uri" in d or "input_s3_key" in d):
-        raise ContractError("Missing input source: need one of ['input_image_s3_uri'|'s3_uri'|'input_s3_key'].")
+        raise ContractError(
+            "Missing input source: need one of ['input_image_s3_uri'|'s3_uri'|'input_s3_key']."
+        )
     return d
 
 
 # ----------------------------- SNAPSHOT_READY (strict, canonical-backed) -----------------------------
+
 
 def parse_snapshot_ready(body: str) -> Dict[str, Any]:
     """
@@ -63,6 +67,7 @@ def parse_snapshot_ready(body: str) -> Dict[str, Any]:
 
 
 # ----------------------------- Optional models -----------------------------
+
 
 class ColorFBL(BaseModel):
     finish: Optional[str] = None
@@ -123,6 +128,7 @@ class EngineResult(BaseModel):
 
 # Helpers
 
+
 def coerce_fbl_colors(payload: Dict[str, Any]) -> List[ColorFBL]:
     raw = payload.get("colors", [])
     fbl_list: List[ColorFBL] = []
@@ -131,14 +137,21 @@ def coerce_fbl_colors(payload: Dict[str, Any]) -> List[ColorFBL]:
         if not isinstance(item, dict):
             return None
         if any(k in item for k in ("finish", "base", "lightness", "conf")):
-            return ColorFBL(**{
-                "finish": item.get("finish"),
-                "base": item.get("base"),
-                "lightness": item.get("lightness"),
-                "conf": float(item.get("conf", 0.0) or 0.0),
-            })
+            return ColorFBL(
+                **{
+                    "finish": item.get("finish"),
+                    "base": item.get("base"),
+                    "lightness": item.get("lightness"),
+                    "conf": float(item.get("conf", 0.0) or 0.0),
+                }
+            )
         if "hex" in item or "p" in item:
-            return ColorFBL(finish=None, base=None, lightness=None, conf=float(item.get("p") or 0.0))
+            return ColorFBL(
+                finish=None,
+                base=None,
+                lightness=None,
+                conf=float(item.get("p") or 0.0),
+            )
         return None
 
     for it in raw if isinstance(raw, list) else []:

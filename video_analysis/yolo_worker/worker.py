@@ -364,6 +364,7 @@ def _rank_and_export_bestmap(
     recorded_at_iso: Optional[str],
     variant: str,
     run_id: str,
+    analysis_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Export crops for tracks in best_by_tid. Replays the video to fetch exact frames.
@@ -379,6 +380,10 @@ def _rank_and_export_bestmap(
     needs_by_frame: Dict[int, List[Tuple[int, TrackBuf]]] = defaultdict(list)
     for tid, tb in best_by_tid.items():
         needs_by_frame[tb.best_frame_idx].append((tid, tb))
+
+    # Bind expected snapshot count to the run container if available
+    if analysis_id is not None:
+        set_video_expected(analysis_id, expected=len(best_by_tid))
 
     frame_targets = sorted(needs_by_frame.keys())
     ptr = 0
@@ -467,47 +472,55 @@ def _rank_and_export_bestmap(
 
 
 def _process_one_video(body: Dict[str, Any]) -> int:
-    # Contract resolution: full or DB-minimal
+    # Contract resolution: PROCESS_VIDEO_DB (DB-minimal) or PROCESS_VIDEO (full)
     if body.get("event") == "PROCESS_VIDEO_DB":
         payload = validate_process_video_db(body)
         vrow = get_video_by_id(payload["video_id"])
-        variant = str(payload.get("variant") or "cmt")
-        run_id = str(payload.get("run_id") or uuid.uuid4())
 
-        # Patch C.1 — normalize recorded_at to ISO string for PROCESS_VIDEO_DB
         recorded_at = vrow.get("recorded_at")
-        if recorded_at is not None and hasattr(recorded_at, "isoformat"):
-            recorded_at = recorded_at.isoformat()
-
         full = {
             "event": "PROCESS_VIDEO",
             "video_id": payload["video_id"],
             "workspace_id": payload["workspace_id"],
-            "workspace_code": vrow["workspace_code"],
+            "workspace_code": vrow.get("workspace_code"),
             "camera_code": vrow["camera_code"],
             "s3_key_raw": vrow["s3_key_raw"],
             "frame_stride": int(
                 vrow.get("frame_stride") or int(CONFIG["FRAME_STRIDE_DEFAULT"])
             ),
-            "recordedAt": recorded_at,
-            "variant": variant,
-            "run_id": run_id,
+            # normalize to the same ISO field used by the API route
+            "recordedAt": recorded_at.isoformat() if recorded_at else None,
+            "variant": payload.get("variant") or "cmt",
+            "run_id": payload.get("run_id"),
         }
     else:
+        # Already in the modern PROCESS_VIDEO schema from /videos/enqueue
         full = validate_process_video(body)
-        variant = str(full.get("variant") or "cmt")
-        run_id = str(full.get("run_id") or uuid.uuid4())
+
+    # Normalize variant and run_id for both forms
+    full["variant"] = str(full.get("variant") or "cmt")
+    full["run_id"] = str(full.get("run_id") or uuid.uuid4())
 
     ws_id = str(full["workspace_id"])
     vid = str(full["video_id"])
-    ws_code = str(full["workspace_code"])
+    ws_code = str(full.get("workspace_code") or "")
     cam_code = str(full["camera_code"])
     s3_key_raw = str(full["s3_key_raw"])
     stride = int(full.get("frame_stride") or int(CONFIG["FRAME_STRIDE_DEFAULT"]))
     recorded_at_iso = full.get("recordedAt")
+    variant = full["variant"]
+    run_id = full["run_id"]
 
-    # Canonical reset + “current run” marker (prevents overlap)
-    aid = start_video_run(ws_id, vid, variant, run_id)
+    # Register or reuse a run container in video_analyses
+    # (implementation detail lives in start_video_run; here we just pass the contract fields)
+    analysis_id = start_video_run(
+        workspace_id=ws_id,
+        video_id=vid,
+        variant=variant,
+        source_kind="snapshot",
+        run_id=run_id,
+        snapshot_s3_key=None,
+    )
 
     # Download & open
     raw_path = _download_s3_to_tmp(str(CONFIG["S3_BUCKET"]), s3_key_raw)
@@ -642,12 +655,13 @@ def _process_one_video(body: Dict[str, Any]) -> int:
         recorded_at_iso=recorded_at_iso,
         variant=variant,
         run_id=run_id,
+        analysis_id=analysis_id,
     )
     emitted = len(emitted_payloads)
 
     # Set run total for progress bar
     try:
-        set_video_expected(aid, emitted)
+        set_video_expected(analysis_id, emitted)
     except Exception as e:
         log.warning(f"[db] failed to set expected_snapshots: {e}")
 
@@ -725,4 +739,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

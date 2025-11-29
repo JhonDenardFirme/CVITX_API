@@ -29,7 +29,7 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
-from typing import Any, Dict, Iterable, Literal, Optional, Tuple, TypedDict, Union
+from typing import Any, Dict, Literal, Optional, Tuple, TypedDict
 
 import boto3
 import cv2
@@ -70,16 +70,16 @@ def get_logger(name: str = "cvitx") -> logging.Logger:
     if logger.handlers:
         return logger
     logger.setLevel(logging.INFO)
-    h = logging.StreamHandler()
+    handler = logging.StreamHandler()
     if CONFIG.get("JSON_LOGS"):
-        h.setFormatter(_JsonFormatter())
+        handler.setFormatter(_JsonFormatter())
     else:
-        h.setFormatter(
+        handler.setFormatter(
             logging.Formatter(
                 "[%(asctime)s] %(levelname)s:%(name)s: %(message)s"
             )
         )
-    logger.addHandler(h)
+    logger.addHandler(handler)
     logger.propagate = False
     return logger
 
@@ -104,15 +104,38 @@ def _assert_regex(pattern: re.Pattern, value: str, field: str) -> str:
 
 
 class ProcessVideo(BaseModel):
+    """
+    Canonical schema for PROCESS_VIDEO messages.
+
+    Matches what /workspaces/{wid}/videos/{vid}/enqueue sends:
+      {
+        "event": "PROCESS_VIDEO",
+        "video_id": "<uuid>",
+        "workspace_id": "<uuid>",
+        "workspace_code": "CTX####" | null,
+        "camera_code": "CAM-TEST-001",
+        "s3_key_raw": "demo_user/<wid>/<vid>/raw/file.mp4",
+        "frame_stride": 3,
+        "recordedAt": "...iso..." | null,
+        "variant": "baseline" | "cmt" (default "cmt"),
+        "run_id": "<uuid>" | null
+      }
+    """
+
     event: Literal["PROCESS_VIDEO"]
     video_id: UUIDStr
     workspace_id: UUIDStr
-    workspace_code: str = Field(min_length=1)
+    # Optional here because older videos may have NULL workspace_code in the DB.
+    # Worker MUST handle the "no workspace_code" case by falling back to a DB lookup
+    # or a safe placeholder when building display IDs / filenames.
+    workspace_code: Optional[str] = None
     camera_code: str = Field(min_length=1)
     s3_key_raw: str
     frame_stride: int = Field(ge=1)
     recordedAt: Optional[str] = None
+    # Variant is optional on the wire; default stays "cmt".
     variant: str = "cmt"
+    # Run ID is assigned by the worker when it calls start_video_run if missing.
     run_id: Optional[UUIDStr] = None
 
     @field_validator("s3_key_raw")
@@ -122,6 +145,11 @@ class ProcessVideo(BaseModel):
 
 
 class ProcessVideoDB(BaseModel):
+    """
+    Minimal PROCESS_VIDEO_DB payload used when the worker rehydrates
+    a run purely from DB context (no raw S3 key).
+    """
+
     event: Literal["PROCESS_VIDEO_DB"]
     video_id: UUIDStr
     workspace_id: UUIDStr
@@ -130,13 +158,36 @@ class ProcessVideoDB(BaseModel):
 
 
 class SnapshotReady(BaseModel):
+    """
+    Canonical schema for SNAPSHOT_READY messages (YOLO → main worker).
+
+    This is the single source of truth for snapshot notifications:
+      {
+        "event": "SNAPSHOT_READY",
+        "video_id": "<uuid>",
+        "workspace_id": "<uuid>",
+        "workspace_code": "CTX####",
+        "camera_code": "CAM-TEST-001",
+        "track_id": 12,
+        "snapshot_s3_key": "s3://<bucket>/demo_user/<wid>/<vid>/snapshots/CTX####_CAM-TEST-001_000012_003000.jpg",
+        "recordedAt": "...iso..." | null,
+        "detectedIn": 3000,
+        "detectedAt": "...iso..." | null,
+        "yolo_type": "Car",
+        "variant": "cmt",
+        "run_id": "<uuid>"
+      }
+    """
+
     event: Literal["SNAPSHOT_READY"]
     video_id: UUIDStr
     workspace_id: UUIDStr
     workspace_code: str = Field(min_length=1)
     camera_code: str = Field(min_length=1)
     track_id: int = Field(ge=1)
-    snapshot_s3_key: str  # full s3:// URI (locked bucket)
+    # Full s3:// URI (locked bucket + canonical prefix), e.g.:
+    # s3://<bucket>/<user_prefix>/<workspace_id>/<video_id>/snapshots/CTX####_CAM-01_000123_003000.jpg
+    snapshot_s3_key: str
     recordedAt: Optional[str] = None
     detectedIn: int = Field(ge=0)  # milliseconds since video start
     detectedAt: Optional[str] = None
@@ -161,24 +212,24 @@ def validate_process_video(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Validate a PROCESS_VIDEO payload; returns normalized dict (python types)."""
     try:
         return ProcessVideo.model_validate(payload).model_dump(mode="python")
-    except ValidationError as e:
-        raise ValueError(f"PROCESS_VIDEO validation error: {e}") from e
+    except ValidationError as exc:
+        raise ValueError(f"PROCESS_VIDEO validation error: {exc}") from exc
 
 
 def validate_process_video_db(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Validate a minimal PROCESS_VIDEO_DB payload."""
     try:
         return ProcessVideoDB.model_validate(payload).model_dump(mode="python")
-    except ValidationError as e:
-        raise ValueError(f"PROCESS_VIDEO_DB validation error: {e}") from e
+    except ValidationError as exc:
+        raise ValueError(f"PROCESS_VIDEO_DB validation error: {exc}") from exc
 
 
 def validate_snapshot_ready(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Validate a SNAPSHOT_READY payload."""
     try:
         return SnapshotReady.model_validate(payload).model_dump(mode="python")
-    except ValidationError as e:
-        raise ValueError(f"SNAPSHOT_READY validation error: {e}") from e
+    except ValidationError as exc:
+        raise ValueError(f"SNAPSHOT_READY validation error: {exc}") from exc
 
 
 # ================================ AWS Clients ============================== #
@@ -277,10 +328,19 @@ def create_image_analysis(snapshot_s3_key: str, workspace_id: str) -> str:
     """
     analysis_id = str(uuid.uuid4())
     sql = """
-    INSERT INTO image_analyses (id, workspace_id, snapshot_s3_key, source_kind, status, created_at, updated_at)
+    INSERT INTO image_analyses (
+      id,
+      workspace_id,
+      snapshot_s3_key,
+      source_kind,
+      status,
+      created_at,
+      updated_at
+    )
     VALUES (%s, %s, %s, 'snapshot', 'queued', NOW(), NOW())
     ON CONFLICT (snapshot_s3_key)
-    DO UPDATE SET updated_at = EXCLUDED.updated_at
+    DO UPDATE SET
+      updated_at = EXCLUDED.updated_at
     RETURNING id::text;
     """
     with _connect() as conn, conn.cursor() as cur:
@@ -306,10 +366,10 @@ def upsert_results(analysis_id: str, variant: str, result: Dict[str, Any]) -> No
         "status": "done"|"error" (default "done")
       }
     """
-    t = result.get("type") or {}
-    m = result.get("make") or {}
-    mm = result.get("model") or {}
-    p = result.get("plate") or {}
+    type_obj = result.get("type") or {}
+    make_obj = result.get("make") or {}
+    model_obj = result.get("model") or {}
+    plate_obj = result.get("plate") or {}
     colors = result.get("colors") or []
     assets = result.get("assets") or {}
     latency_ms = int(result.get("latency_ms") or 0)
@@ -318,58 +378,68 @@ def upsert_results(analysis_id: str, variant: str, result: Dict[str, Any]) -> No
 
     sql = """
     INSERT INTO image_analysis_results (
-      analysis_id, variant,
+      analysis_id,
+      variant,
       type_label,  type_conf,
       make_label,  make_conf,
       model_label, model_conf,
       plate_text,  plate_conf,
-      colors,      assets,
-      latency_ms,  memory_gb,
-      status,      created_at, updated_at
+      colors,
+      assets,
+      latency_ms,
+      memory_usage,
+      status,
+      created_at,
+      updated_at
     )
     VALUES (
-      %(analysis_id)s, %(variant)s,
+      %(analysis_id)s,
+      %(variant)s,
       %(type_label)s,  %(type_conf)s,
       %(make_label)s,  %(make_conf)s,
       %(model_label)s, %(model_conf)s,
       %(plate_text)s,  %(plate_conf)s,
-      %(colors)s,      %(assets)s,
-      %(latency_ms)s,  %(memory_gb)s,
-      %(status)s,      NOW(), NOW()
+      %(colors)s,
+      %(assets)s,
+      %(latency_ms)s,
+      %(memory_usage)s,
+      %(status)s,
+      NOW(),
+      NOW()
     )
     ON CONFLICT (analysis_id, variant)
     DO UPDATE SET
-      type_label  = EXCLUDED.type_label,
-      type_conf   = EXCLUDED.type_conf,
-      make_label  = EXCLUDED.make_label,
-      make_conf   = EXCLUDED.make_conf,
-      model_label = EXCLUDED.model_label,
-      model_conf  = EXCLUDED.model_conf,
-      plate_text  = EXCLUDED.plate_text,
-      plate_conf  = EXCLUDED.plate_conf,
-      colors      = EXCLUDED.colors,
-      assets      = EXCLUDED.assets,
-      latency_ms  = EXCLUDED.latency_ms,
-      memory_gb   = EXCLUDED.memory_gb,
-      status      = EXCLUDED.status,
-      updated_at  = NOW();
+      type_label   = EXCLUDED.type_label,
+      type_conf    = EXCLUDED.type_conf,
+      make_label   = EXCLUDED.make_label,
+      make_conf    = EXCLUDED.make_conf,
+      model_label  = EXCLUDED.model_label,
+      model_conf   = EXCLUDED.model_conf,
+      plate_text   = EXCLUDED.plate_text,
+      plate_conf   = EXCLUDED.plate_conf,
+      colors       = EXCLUDED.colors,
+      assets       = EXCLUDED.assets,
+      latency_ms   = EXCLUDED.latency_ms,
+      memory_usage = EXCLUDED.memory_usage,
+      status       = EXCLUDED.status,
+      updated_at   = NOW();
     """
 
     params = {
         "analysis_id": str(analysis_id),
         "variant": str(variant),
-        "type_label": t.get("label"),
-        "type_conf": float(t.get("conf")) if t.get("conf") is not None else None,
-        "make_label": m.get("label"),
-        "make_conf": float(m.get("conf")) if m.get("conf") is not None else None,
-        "model_label": mm.get("label"),
-        "model_conf": float(mm.get("conf")) if mm.get("conf") is not None else None,
-        "plate_text": p.get("text"),
-        "plate_conf": float(p.get("conf")) if p.get("conf") is not None else None,
+        "type_label": type_obj.get("label"),
+        "type_conf": float(type_obj.get("conf")) if type_obj.get("conf") is not None else None,
+        "make_label": make_obj.get("label"),
+        "make_conf": float(make_obj.get("conf")) if make_obj.get("conf") is not None else None,
+        "model_label": model_obj.get("label"),
+        "model_conf": float(model_obj.get("conf")) if model_obj.get("conf") is not None else None,
+        "plate_text": plate_obj.get("text"),
+        "plate_conf": float(plate_obj.get("conf")) if plate_obj.get("conf") is not None else None,
         "colors": PgJson(colors),
         "assets": PgJson(assets),
         "latency_ms": int(latency_ms),
-        "memory_gb": float(memory_gb) if memory_gb is not None else None,
+        "memory_usage": float(memory_gb) if memory_gb is not None else None,
         "status": str(status),
     }
 
@@ -390,9 +460,25 @@ def create_video_analysis(snapshot_s3_key: str, workspace_id: str, video_id: str
     analysis_id = str(uuid.uuid4())
     sql = """
     INSERT INTO video_analyses (
-      id, workspace_id, video_id, snapshot_s3_key, source_kind, status, created_at, updated_at
+      id,
+      workspace_id,
+      video_id,
+      snapshot_s3_key,
+      source_kind,
+      status,
+      created_at,
+      updated_at
     )
-    VALUES (%s, %s, %s, %s, 'snapshot', 'processing', NOW(), NOW())
+    VALUES (
+      %s,
+      %s,
+      %s,
+      %s,
+      'snapshot',
+      'processing',
+      NOW(),
+      NOW()
+    )
     ON CONFLICT (snapshot_s3_key)
     DO UPDATE SET
       workspace_id = EXCLUDED.workspace_id,
@@ -411,13 +497,14 @@ def upsert_video_results(analysis_id: str, variant: str, result: Dict[str, Any])
     """
     Upsert a result row into video_analysis_results (UNIQUE(analysis_id, variant)).
 
-    Expected 'result' shape (keys are optional; absent ones become NULL/{}):
+    Expected 'result' shape (keys are optional; absent ones become NULL/{} or []):
       {
         "type":  {"label": str, "conf": float},
         "make":  {"label": str, "conf": float},
         "model": {"label": str, "conf": float},
         "plate": {"text": str, "conf": float},
         "colors": [ {finish|None, base, lightness|None, conf}, ... ],
+        "parts":  [ {name, conf}, ... ],
         "assets": { "annotated_key": str|None, "vehicle_key": str|None, "plate_key": str|None },
         "latency_ms": int,
         "memory_gb": float|None,
@@ -425,11 +512,12 @@ def upsert_video_results(analysis_id: str, variant: str, result: Dict[str, Any])
         "error_msg": str|None
       }
     """
-    t = result.get("type") or {}
-    m = result.get("make") or {}
-    mm = result.get("model") or {}
-    p = result.get("plate") or {}
+    type_obj = result.get("type") or {}
+    make_obj = result.get("make") or {}
+    model_obj = result.get("model") or {}
+    plate_obj = result.get("plate") or {}
     colors = result.get("colors") or []
+    parts = result.get("parts") or []
     assets = result.get("assets") or {}
     latency_ms = int(result.get("latency_ms") or 0)
     memory_gb = result.get("memory_gb")
@@ -438,61 +526,75 @@ def upsert_video_results(analysis_id: str, variant: str, result: Dict[str, Any])
 
     sql = """
     INSERT INTO video_analysis_results (
-      analysis_id, variant,
+      analysis_id,
+      variant,
       type_label,  type_conf,
       make_label,  make_conf,
       model_label, model_conf,
       plate_text,  plate_conf,
-      colors,      assets,
-      latency_ms,  memory_gb,
-      status,      error_msg,
-      created_at,  updated_at
+      colors,
+      parts,
+      assets,
+      latency_ms,
+      memory_usage,
+      status,
+      error_msg,
+      created_at,
+      updated_at
     )
     VALUES (
-      %(analysis_id)s, %(variant)s,
+      %(analysis_id)s,
+      %(variant)s,
       %(type_label)s,  %(type_conf)s,
       %(make_label)s,  %(make_conf)s,
       %(model_label)s, %(model_conf)s,
       %(plate_text)s,  %(plate_conf)s,
-      %(colors)s,      %(assets)s,
-      %(latency_ms)s,  %(memory_gb)s,
-      %(status)s,      %(error_msg)s,
-      NOW(),           NOW()
+      %(colors)s,
+      %(parts)s,
+      %(assets)s,
+      %(latency_ms)s,
+      %(memory_usage)s,
+      %(status)s,
+      %(error_msg)s,
+      NOW(),
+      NOW()
     )
     ON CONFLICT (analysis_id, variant)
     DO UPDATE SET
-      type_label  = EXCLUDED.type_label,
-      type_conf   = EXCLUDED.type_conf,
-      make_label  = EXCLUDED.make_label,
-      make_conf   = EXCLUDED.make_conf,
-      model_label = EXCLUDED.model_label,
-      model_conf  = EXCLUDED.model_conf,
-      plate_text  = EXCLUDED.plate_text,
-      plate_conf  = EXCLUDED.plate_conf,
-      colors      = EXCLUDED.colors,
-      assets      = EXCLUDED.assets,
-      latency_ms  = EXCLUDED.latency_ms,
-      memory_gb   = EXCLUDED.memory_gb,
-      status      = EXCLUDED.status,
-      error_msg   = EXCLUDED.error_msg,
-      updated_at  = NOW();
+      type_label   = EXCLUDED.type_label,
+      type_conf    = EXCLUDED.type_conf,
+      make_label   = EXCLUDED.make_label,
+      make_conf    = EXCLUDED.make_conf,
+      model_label  = EXCLUDED.model_label,
+      model_conf   = EXCLUDED.model_conf,
+      plate_text   = EXCLUDED.plate_text,
+      plate_conf   = EXCLUDED.plate_conf,
+      colors       = EXCLUDED.colors,
+      parts        = EXCLUDED.parts,
+      assets       = EXCLUDED.assets,
+      latency_ms   = EXCLUDED.latency_ms,
+      memory_usage = EXCLUDED.memory_usage,
+      status       = EXCLUDED.status,
+      error_msg    = EXCLUDED.error_msg,
+      updated_at   = NOW();
     """
 
     params = {
         "analysis_id": str(analysis_id),
         "variant": str(variant),
-        "type_label": t.get("label"),
-        "type_conf": float(t.get("conf")) if t.get("conf") is not None else None,
-        "make_label": m.get("label"),
-        "make_conf": float(m.get("conf")) if m.get("conf") is not None else None,
-        "model_label": mm.get("label"),
-        "model_conf": float(mm.get("conf")) if mm.get("conf") is not None else None,
-        "plate_text": p.get("text"),
-        "plate_conf": float(p.get("conf")) if p.get("conf") is not None else None,
+        "type_label": type_obj.get("label"),
+        "type_conf": float(type_obj.get("conf")) if type_obj.get("conf") is not None else None,
+        "make_label": make_obj.get("label"),
+        "make_conf": float(make_obj.get("conf")) if make_obj.get("conf") is not None else None,
+        "model_label": model_obj.get("label"),
+        "model_conf": float(model_obj.get("conf")) if model_obj.get("conf") is not None else None,
+        "plate_text": plate_obj.get("text"),
+        "plate_conf": float(plate_obj.get("conf")) if plate_obj.get("conf") is not None else None,
         "colors": PgJson(colors),
+        "parts": PgJson(parts),
         "assets": PgJson(assets),
         "latency_ms": int(latency_ms),
-        "memory_gb": float(memory_gb) if memory_gb is not None else None,
+        "memory_usage": float(memory_gb) if memory_gb is not None else None,
         "status": str(status),
         "error_msg": str(error_msg) if error_msg is not None else None,
     }
@@ -513,14 +615,14 @@ def set_video_analysis_status(analysis_id: str, status: str, error_msg: Optional
             text(
                 """
                 UPDATE video_analyses
-                   SET status         = :status,
-                       error_msg      = :error_msg,
+                   SET status          = :status,
+                       error_msg       = :error_msg,
                        run_finished_at = CASE
                                            WHEN :status IN ('error', 'done')
                                            THEN COALESCE(run_finished_at, now())
                                            ELSE run_finished_at
                                          END,
-                       updated_at     = now()
+                       updated_at      = now()
                  WHERE id = :aid
                 """
             ),
@@ -604,28 +706,29 @@ def get_video_run(workspace_id: str, video_id: str, variant: str) -> Optional[Di
         row = conn.execute(
             text(
                 """
-                SELECT id,
-                       workspace_id,
-                       video_id,
-                       variant,
-                       run_id,
-                       status,
-                       expected_snapshots,
-                       processed_snapshots,
-                       processed_ok,
-                       processed_err,
-                       run_started_at,
-                       run_finished_at,
-                       last_snapshot_at,
-                       error_msg
-                  FROM video_analyses
-                 WHERE workspace_id = :wid
-                   AND video_id     = :vid
-                   AND variant      = :variant
-                 ORDER BY updated_at DESC,
-                          run_started_at DESC NULLS LAST,
-                          created_at DESC
-                 LIMIT 1
+                SELECT
+                  id,
+                  workspace_id,
+                  video_id,
+                  variant,
+                  run_id,
+                  status,
+                  expected_snapshots,
+                  processed_snapshots,
+                  processed_ok,
+                  processed_err,
+                  run_started_at,
+                  run_finished_at,
+                  last_snapshot_at,
+                  error_msg
+                FROM video_analyses
+                WHERE workspace_id = :wid
+                  AND video_id     = :vid
+                  AND variant      = :variant
+                ORDER BY updated_at DESC,
+                         run_started_at DESC NULLS LAST,
+                         created_at DESC
+                LIMIT 1
                 """
             ),
             {"wid": workspace_id, "vid": video_id, "variant": variant},
@@ -654,10 +757,10 @@ def get_video_run(workspace_id: str, video_id: str, variant: str) -> Optional[Di
 
 def set_video_expected(analysis_id: str, expected: int) -> None:
     """
-    Set expected_snapshots for a run and ensure status is at least 'running'.
+    Set expected_snapshots for a run container.
 
-    Called once at the end of YOLO worker processing, after counting how many
-    snapshots were emitted.
+    Called once by the YOLO worker after it has enumerated how many snapshots it
+    will emit for this (video, variant, run_id).
     """
     with _video_conn() as conn:
         conn.execute(
@@ -665,11 +768,6 @@ def set_video_expected(analysis_id: str, expected: int) -> None:
                 """
                 UPDATE video_analyses
                    SET expected_snapshots = :expected,
-                       status             = CASE
-                                               WHEN status IS NULL THEN 'running'
-                                               WHEN status = 'queued' THEN 'running'
-                                               ELSE status
-                                             END,
                        updated_at         = now()
                  WHERE id = :aid
                 """
@@ -679,193 +777,166 @@ def set_video_expected(analysis_id: str, expected: int) -> None:
 
 
 def upsert_video_detection_and_progress(
+    *,
     analysis_id: str,
     run_id: str,
     track_id: int,
-    payload: Dict[str, Any],
+    snapshot_s3_key: str,
+    yolo_type: Optional[str],
+    detected_in_ms: int,
+    detected_at: Optional[datetime],
+    result: Dict[str, Any],
 ) -> None:
     """
-    Idempotent upsert into video_detections + progress update in video_analyses.
+    Insert or update a detection row + bump run counters in video_analyses.
 
-    • Uses (analysis_id, run_id, track_id) as a natural key.
-    • Safe on SQS retries (same triplet won't double-count).
+    Expected result shape (keys optional, absent → NULL/[]):
+      {
+        "type":  {"label": str, "conf": float},
+        "make":  {"label": str, "conf": float},
+        "model": {"label": str, "conf": float},
+        "plate": {"text": str, "conf": float},
+        "colors": [ {base, finish|None, lightness|None, conf}, ... ],
+        "parts":  [ {name, conf}, ... ],
+        "assets": {
+          "annotated_image_s3_key": str|None,
+          "vehicle_image_s3_key":   str|None,
+          "plate_image_s3_key":     str|None
+        },
+        "latency_ms": int,
+        "memory_gb": float|None,
+        "status": "done"|"error",
+        "error_msg": str|None
+      }
     """
-    det_id = str(uuid.uuid4())
+    type_obj = result.get("type") or {}
+    make_obj = result.get("make") or {}
+    model_obj = result.get("model") or {}
+    plate_obj = result.get("plate") or {}
+    colors = result.get("colors") or []
+    parts = result.get("parts") or []
+    assets = result.get("assets") or {}
+    latency_ms = int(result.get("latency_ms") or 0)
+    memory_gb = result.get("memory_gb")
+    status = result.get("status") or "done"
+    error_msg = result.get("error_msg")
 
-    type_obj = payload.get("type") or {}
-    make_obj = payload.get("make") or {}
-    model_obj = payload.get("model") or {}
-    plate_obj = payload.get("plate") or {}
+    # Treat anything not explicitly error as OK for counters.
+    is_ok = (status != "error") and (error_msg is None)
 
-    colors = payload.get("colors") or []
-    assets = payload.get("assets") or {}
-
-    status = payload.get("status") or "done"
-    error_msg = payload.get("error_msg")
+    sql_det = """
+    INSERT INTO video_detections (
+      analysis_id,
+      run_id,
+      track_id,
+      snapshot_s3_key,
+      yolo_type,
+      detected_in_ms,
+      detected_at,
+      type_label,  type_conf,
+      make_label,  make_conf,
+      model_label, model_conf,
+      plate_text,  plate_conf,
+      colors,
+      parts,
+      assets,
+      latency_ms,
+      memory_usage,
+      status,
+      error_msg,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      :analysis_id,
+      :run_id,
+      :track_id,
+      :snapshot_s3_key,
+      :yolo_type,
+      :detected_in_ms,
+      :detected_at,
+      :type_label,  :type_conf,
+      :make_label,  :make_conf,
+      :model_label, :model_conf,
+      :plate_text,  :plate_conf,
+      :colors,
+      :parts,
+      :assets,
+      :latency_ms,
+      :memory_usage,
+      :status,
+      :error_msg,
+      now(),
+      now()
+    )
+    ON CONFLICT (analysis_id, run_id, track_id)
+    DO UPDATE SET
+      snapshot_s3_key = EXCLUDED.snapshot_s3_key,
+      yolo_type       = EXCLUDED.yolo_type,
+      detected_in_ms  = EXCLUDED.detected_in_ms,
+      detected_at     = EXCLUDED.detected_at,
+      type_label      = EXCLUDED.type_label,
+      type_conf       = EXCLUDED.type_conf,
+      make_label      = EXCLUDED.make_label,
+      make_conf       = EXCLUDED.make_conf,
+      model_label     = EXCLUDED.model_label,
+      model_conf      = EXCLUDED.model_conf,
+      plate_text      = EXCLUDED.plate_text,
+      plate_conf      = EXCLUDED.plate_conf,
+      colors          = EXCLUDED.colors,
+      parts           = EXCLUDED.parts,
+      assets          = EXCLUDED.assets,
+      latency_ms      = EXCLUDED.latency_ms,
+      memory_usage    = EXCLUDED.memory_usage,
+      status          = EXCLUDED.status,
+      error_msg       = EXCLUDED.error_msg,
+      updated_at      = now();
+    """
 
     with _video_conn() as conn:
-        # 1) Upsert detection row
+        # Upsert detection row
         conn.execute(
-            text(
-                """
-                INSERT INTO video_detections (
-                    id,
-                    analysis_id,
-                    run_id,
-                    track_id,
-                    snapshot_s3_key,
-                    yolo_type,
-                    type_label,
-                    type_conf,
-                    make_label,
-                    make_conf,
-                    model_label,
-                    model_conf,
-                    plate_text,
-                    plate_conf,
-                    colors,
-                    assets,
-                    detected_in_ms,
-                    detected_at,
-                    latency_ms,
-                    memory_gb,
-                    status,
-                    error_msg,
-                    created_at,
-                    updated_at
-                )
-                VALUES (
-                    :id,
-                    :aid,
-                    :run_id,
-                    :track_id,
-                    :snapshot_s3_key,
-                    :yolo_type,
-                    :type_label,
-                    :type_conf,
-                    :make_label,
-                    :make_conf,
-                    :model_label,
-                    :model_conf,
-                    :plate_text,
-                    :plate_conf,
-                    :colors,
-                    :assets,
-                    :detected_in_ms,
-                    :detected_at,
-                    :latency_ms,
-                    :memory_gb,
-                    :status,
-                    :error_msg,
-                    now(),
-                    now()
-                )
-                ON CONFLICT (analysis_id, run_id, track_id)
-                DO UPDATE SET
-                    snapshot_s3_key = EXCLUDED.snapshot_s3_key,
-                    yolo_type       = EXCLUDED.yolo_type,
-                    type_label      = EXCLUDED.type_label,
-                    type_conf       = EXCLUDED.type_conf,
-                    make_label      = EXCLUDED.make_label,
-                    make_conf       = EXCLUDED.make_conf,
-                    model_label     = EXCLUDED.model_label,
-                    model_conf      = EXCLUDED.model_conf,
-                    plate_text      = EXCLUDED.plate_text,
-                    plate_conf      = EXCLUDED.plate_conf,
-                    colors          = EXCLUDED.colors,
-                    assets          = EXCLUDED.assets,
-                    detected_in_ms  = EXCLUDED.detected_in_ms,
-                    detected_at     = EXCLUDED.detected_at,
-                    latency_ms      = EXCLUDED.latency_ms,
-                    memory_gb       = EXCLUDED.memory_gb,
-                    status          = EXCLUDED.status,
-                    error_msg       = EXCLUDED.error_msg,
-                    updated_at      = now()
-                """
-            ),
+            text(sql_det),
             {
-                "id": det_id,
-                "aid": analysis_id,
+                "analysis_id": analysis_id,
                 "run_id": run_id,
                 "track_id": int(track_id),
-                "snapshot_s3_key": payload.get("snapshot_s3_key"),
-                "yolo_type": payload.get("yolo_type"),
+                "snapshot_s3_key": snapshot_s3_key,
+                "yolo_type": yolo_type,
+                "detected_in_ms": int(detected_in_ms),
+                "detected_at": detected_at,
                 "type_label": type_obj.get("label"),
-                "type_conf": type_obj.get("conf"),
+                "type_conf": float(type_obj.get("conf")) if type_obj.get("conf") is not None else None,
                 "make_label": make_obj.get("label"),
-                "make_conf": make_obj.get("conf"),
+                "make_conf": float(make_obj.get("conf")) if make_obj.get("conf") is not None else None,
                 "model_label": model_obj.get("label"),
-                "model_conf": model_obj.get("conf"),
+                "model_conf": float(model_obj.get("conf")) if model_obj.get("conf") is not None else None,
                 "plate_text": plate_obj.get("text"),
-                "plate_conf": plate_obj.get("conf"),
-                "colors": colors,
-                "assets": assets,
-                "detected_in_ms": payload.get("detected_in_ms"),
-                "detected_at": payload.get("detected_at"),
-                "latency_ms": payload.get("latency_ms"),
-                "memory_gb": payload.get("memory_gb"),
+                "plate_conf": float(plate_obj.get("conf")) if plate_obj.get("conf") is not None else None,
+                "colors": PgJson(colors),
+                "parts": PgJson(parts),
+                "assets": PgJson(assets),
+                "latency_ms": latency_ms,
+                "memory_usage": float(memory_gb) if memory_gb is not None else None,
                 "status": status,
                 "error_msg": error_msg,
             },
         )
 
-        # 2) Recompute per-run stats
-        agg = conn.execute(
-            text(
-                """
-                SELECT COUNT(*) AS total,
-                       SUM(CASE WHEN status = 'done' AND error_msg IS NULL
-                                THEN 1 ELSE 0 END) AS ok,
-                       SUM(CASE WHEN status <> 'done' OR error_msg IS NOT NULL
-                                THEN 1 ELSE 0 END) AS err,
-                       MAX(detected_at) AS last_snapshot_at
-                  FROM video_detections
-                 WHERE analysis_id = :aid
-                   AND run_id      = :run_id
-                """
-            ),
-            {"aid": analysis_id, "run_id": run_id},
-        ).mappings().first()
-
-        total = int(agg["total"] or 0)
-        ok = int(agg["ok"] or 0)
-        err = int(agg["err"] or 0)
-        last_snapshot_at = agg["last_snapshot_at"]
-
-        # 3) Update video_analyses progress
+        # Bump per-run counters
         conn.execute(
             text(
                 """
                 UPDATE video_analyses
-                   SET processed_snapshots = :total,
-                       processed_ok        = :ok,
-                       processed_err       = :err,
-                       last_snapshot_at    = COALESCE(:last_snapshot_at, last_snapshot_at),
-                       status              = CASE
-                                               WHEN expected_snapshots IS NOT NULL
-                                                AND expected_snapshots > 0
-                                                AND :total >= expected_snapshots
-                                               THEN 'done'
-                                               ELSE 'running'
-                                             END,
-                       run_finished_at     = CASE
-                                               WHEN expected_snapshots IS NOT NULL
-                                                AND expected_snapshots > 0
-                                                AND :total >= expected_snapshots
-                                               THEN COALESCE(run_finished_at, now())
-                                               ELSE run_finished_at
-                                             END,
+                   SET processed_snapshots = processed_snapshots + 1,
+                       processed_ok        = processed_ok + CASE WHEN :ok THEN 1 ELSE 0 END,
+                       processed_err       = processed_err + CASE WHEN :ok THEN 0 ELSE 1 END,
+                       last_snapshot_at    = COALESCE(:detected_at, last_snapshot_at),
                        updated_at          = now()
                  WHERE id = :aid
                 """
             ),
-            {
-                "aid": analysis_id,
-                "total": total,
-                "ok": ok,
-                "err": err,
-                "last_snapshot_at": last_snapshot_at,
-            },
+            {"aid": analysis_id, "ok": is_ok, "detected_at": detected_at},
         )
 
 
@@ -929,7 +1000,8 @@ def crop_with_margin(
 
 
 def letterbox_to_square(
-    img: np.ndarray, size: int = int(CONFIG["SNAPSHOT_SIZE"])
+    img: np.ndarray,
+    size: int = int(CONFIG["SNAPSHOT_SIZE"]),
 ) -> np.ndarray:
     """
     Letterbox an image to a square canvas of `size` with aspect preserved (pad with black).
@@ -951,7 +1023,8 @@ def letterbox_to_square(
 
 
 def encode_jpeg(
-    img: np.ndarray, quality: int = int(CONFIG["JPG_QUALITY"])
+    img: np.ndarray,
+    quality: int = int(CONFIG["JPG_QUALITY"]),
 ) -> bytes:
     """Encode an image to JPEG bytes with the configured quality."""
     ok, buf = cv2.imencode(
@@ -1041,196 +1114,3 @@ __all__ = [
     "s3_uri",
 ]
 
-
-# ==== Patch 2025-11-28 — Override upsert_video_detection_and_progress to JSON-encode colors/assets ====
-def upsert_video_detection_and_progress(
-    analysis_id: str,
-    run_id: str,
-    track_id: int,
-    payload: Dict[str, Any],
-) -> None:
-    """
-    Idempotent upsert into video_detections + progress update in video_analyses.
-
-    Patched version:
-    • Same semantics as the original function.
-    • colors / assets are JSON-encoded before sending to the DB to avoid
-      psycopg2 "can't adapt type 'dict'" errors when using SQLAlchemy text().
-    """
-    det_id = str(uuid.uuid4())
-
-    type_obj = payload.get("type") or {}
-    make_obj = payload.get("make") or {}
-    model_obj = payload.get("model") or {}
-    plate_obj = payload.get("plate") or {}
-
-    colors = payload.get("colors") or []
-    assets = payload.get("assets") or {}
-
-    status = payload.get("status") or "done"
-    error_msg = payload.get("error_msg")
-
-    with _video_conn() as conn:
-        # 1) Upsert detection row
-        conn.execute(
-            text(
-                """
-                INSERT INTO video_detections (
-                    id,
-                    analysis_id,
-                    run_id,
-                    track_id,
-                    snapshot_s3_key,
-                    yolo_type,
-                    type_label,
-                    type_conf,
-                    make_label,
-                    make_conf,
-                    model_label,
-                    model_conf,
-                    plate_text,
-                    plate_conf,
-                    colors,
-                    assets,
-                    detected_in_ms,
-                    detected_at,
-                    latency_ms,
-                    memory_gb,
-                    status,
-                    error_msg,
-                    created_at,
-                    updated_at
-                )
-                VALUES (
-                    :id,
-                    :aid,
-                    :run_id,
-                    :track_id,
-                    :snapshot_s3_key,
-                    :yolo_type,
-                    :type_label,
-                    :type_conf,
-                    :make_label,
-                    :make_conf,
-                    :model_label,
-                    :model_conf,
-                    :plate_text,
-                    :plate_conf,
-                    :colors,
-                    :assets,
-                    :detected_in_ms,
-                    :detected_at,
-                    :latency_ms,
-                    :memory_gb,
-                    :status,
-                    :error_msg,
-                    now(),
-                    now()
-                )
-                ON CONFLICT (analysis_id, run_id, track_id)
-                DO UPDATE SET
-                    snapshot_s3_key = EXCLUDED.snapshot_s3_key,
-                    yolo_type       = EXCLUDED.yolo_type,
-                    type_label      = EXCLUDED.type_label,
-                    type_conf       = EXCLUDED.type_conf,
-                    make_label      = EXCLUDED.make_label,
-                    make_conf       = EXCLUDED.make_conf,
-                    model_label     = EXCLUDED.model_label,
-                    model_conf      = EXCLUDED.model_conf,
-                    plate_text      = EXCLUDED.plate_text,
-                    plate_conf      = EXCLUDED.plate_conf,
-                    colors          = EXCLUDED.colors,
-                    assets          = EXCLUDED.assets,
-                    detected_in_ms  = EXCLUDED.detected_in_ms,
-                    detected_at     = EXCLUDED.detected_at,
-                    latency_ms      = EXCLUDED.latency_ms,
-                    memory_gb       = EXCLUDED.memory_gb,
-                    status          = EXCLUDED.status,
-                    error_msg       = EXCLUDED.error_msg,
-                    updated_at      = now()
-                """
-            ),
-            {
-                "id": det_id,
-                "aid": analysis_id,
-                "run_id": run_id,
-                "track_id": int(track_id),
-                "snapshot_s3_key": payload.get("snapshot_s3_key"),
-                "yolo_type": payload.get("yolo_type"),
-                "type_label": type_obj.get("label"),
-                "type_conf": type_obj.get("conf"),
-                "make_label": make_obj.get("label"),
-                "make_conf": make_obj.get("conf"),
-                "model_label": model_obj.get("label"),
-                "model_conf": model_obj.get("conf"),
-                "plate_text": plate_obj.get("text"),
-                "plate_conf": plate_obj.get("conf"),
-                "colors": json.dumps(colors),
-                "assets": json.dumps(assets),
-                "detected_in_ms": payload.get("detected_in_ms"),
-                "detected_at": payload.get("detected_at"),
-                "latency_ms": payload.get("latency_ms"),
-                "memory_gb": payload.get("memory_gb"),
-                "status": status,
-                "error_msg": error_msg,
-            },
-        )
-
-        # 2) Recompute per-run stats
-        agg = conn.execute(
-            text(
-                """
-                SELECT COUNT(*) AS total,
-                       SUM(CASE WHEN status = 'done' AND error_msg IS NULL
-                                THEN 1 ELSE 0 END) AS ok,
-                       SUM(CASE WHEN status <> 'done' OR error_msg IS NOT NULL
-                                THEN 1 ELSE 0 END) AS err,
-                       MAX(detected_at) AS last_snapshot_at
-                  FROM video_detections
-                 WHERE analysis_id = :aid
-                   AND run_id      = :run_id
-                """
-            ),
-            {"aid": analysis_id, "run_id": run_id},
-        ).mappings().first()
-
-        total = int(agg["total"] or 0)
-        ok = int(agg["ok"] or 0)
-        err = int(agg["err"] or 0)
-        last_snapshot_at = agg["last_snapshot_at"]
-
-        # 3) Update video_analyses progress
-        conn.execute(
-            text(
-                """
-                UPDATE video_analyses
-                   SET processed_snapshots = :total,
-                       processed_ok        = :ok,
-                       processed_err       = :err,
-                       last_snapshot_at    = COALESCE(:last_snapshot_at, last_snapshot_at),
-                       status              = CASE
-                                               WHEN expected_snapshots IS NOT NULL
-                                                AND expected_snapshots > 0
-                                                AND :total >= expected_snapshots
-                                               THEN 'done'
-                                               ELSE 'running'
-                                             END,
-                       run_finished_at     = CASE
-                                               WHEN expected_snapshots IS NOT NULL
-                                                AND expected_snapshots > 0
-                                                AND :total >= expected_snapshots
-                                               THEN COALESCE(run_finished_at, now())
-                                               ELSE run_finished_at
-                                             END,
-                       updated_at          = now()
-                 WHERE id = :aid
-                """
-            ),
-            {
-                "aid": analysis_id,
-                "total": total,
-                "ok": ok,
-                "err": err,
-                "last_snapshot_at": last_snapshot_at,
-            },
-        )
