@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS video_analyses (
   run_started_at TIMESTAMPTZ,
   run_finished_at TIMESTAMPTZ,
   last_snapshot_at TIMESTAMPTZ,
+  latency_ms INTEGER,
+  memory_usage DOUBLE PRECISION,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -29,14 +31,19 @@ CREATE TABLE IF NOT EXISTS video_analysis_results (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   analysis_id UUID NOT NULL REFERENCES video_analyses(id) ON DELETE CASCADE,
   variant TEXT NOT NULL,
-  type_label TEXT, type_conf DOUBLE PRECISION,
-  make_label TEXT, make_conf DOUBLE PRECISION,
-  model_label TEXT, model_conf DOUBLE PRECISION,
-  plate_text TEXT, plate_conf DOUBLE PRECISION,
+  type_label TEXT,
+  type_conf DOUBLE PRECISION,
+  make_label TEXT,
+  make_conf DOUBLE PRECISION,
+  model_label TEXT,
+  model_conf DOUBLE PRECISION,
+  plate_text TEXT,
+  plate_conf DOUBLE PRECISION,
+  parts JSONB NOT NULL DEFAULT '[]'::jsonb,
   colors JSONB,
   assets JSONB,
   latency_ms INTEGER,
-  memory_gb DOUBLE PRECISION,
+  memory_usage DOUBLE PRECISION,
   status TEXT NOT NULL DEFAULT 'done',
   error_msg TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -44,7 +51,7 @@ CREATE TABLE IF NOT EXISTS video_analysis_results (
   UNIQUE (analysis_id, variant)
 );
 
--- NEW: per-vehicle/per-track results (the real “set” you want)
+-- Per-vehicle/per-track results (one row per tracked object)
 CREATE TABLE IF NOT EXISTS video_detections (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   analysis_id UUID NOT NULL REFERENCES video_analyses(id) ON DELETE CASCADE,
@@ -54,14 +61,19 @@ CREATE TABLE IF NOT EXISTS video_detections (
   detected_in_ms INTEGER,
   detected_at TIMESTAMPTZ,
   yolo_type TEXT,
-  type_label TEXT, type_conf DOUBLE PRECISION,
-  make_label TEXT, make_conf DOUBLE PRECISION,
-  model_label TEXT, model_conf DOUBLE PRECISION,
-  plate_text TEXT, plate_conf DOUBLE PRECISION,
+  type_label TEXT,
+  type_conf DOUBLE PRECISION,
+  make_label TEXT,
+  make_conf DOUBLE PRECISION,
+  model_label TEXT,
+  model_conf DOUBLE PRECISION,
+  plate_text TEXT,
+  plate_conf DOUBLE PRECISION,
+  parts JSONB NOT NULL DEFAULT '[]'::jsonb,
   colors JSONB,
   assets JSONB,
   latency_ms INTEGER,
-  memory_gb DOUBLE PRECISION,
+  memory_usage DOUBLE PRECISION,
   status TEXT NOT NULL DEFAULT 'done',
   error_msg TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -72,7 +84,7 @@ CREATE TABLE IF NOT EXISTS video_detections (
 CREATE INDEX IF NOT EXISTS ix_video_analyses_ws_vid
   ON video_analyses (workspace_id, video_id);
 
--- Drop this in fresh schema (snapshot_s3_key is no longer unique nor required)
+-- snapshot_s3_key is no longer unique nor required; no unique index here
 
 CREATE INDEX IF NOT EXISTS ix_video_results_analysis_variant
   ON video_analysis_results (analysis_id, variant);
