@@ -860,18 +860,10 @@ def upsert_video_detection_and_progress(
       }
     """
     # Normalize detected_at (accept ISO strings or datetime/None)
-    # We want to:
-    #   • Accept either an ISO8601 string (from SNAPSHOT_READY.detectedAt)
-    #     or a datetime/None passed directly by callers.
-    #   • Always have a well-defined local det_at for both the INSERT/UPDATE
-    #     and the per-run counters (last_snapshot_at).
     det_at: Optional[datetime]
     if isinstance(detected_at, str):
-        # Accept "...Z" or with explicit offset; _parse_iso handles both and
-        # returns a timezone-aware datetime or None on failure.
         det_at = _parse_iso(detected_at)
     else:
-        # Already a datetime or None — use as-is.
         det_at = detected_at
 
     type_obj = result.get("type") or {}

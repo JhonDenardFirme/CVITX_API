@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS video_analyses (
   run_finished_at TIMESTAMPTZ,
   last_snapshot_at TIMESTAMPTZ,
   latency_ms INTEGER,
+  gflops DOUBLE PRECISION,
   memory_usage DOUBLE PRECISION,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS video_analysis_results (
   colors JSONB,
   assets JSONB,
   latency_ms INTEGER,
+  gflops DOUBLE PRECISION,
   memory_usage DOUBLE PRECISION,
   status TEXT NOT NULL DEFAULT 'done',
   error_msg TEXT,
@@ -73,6 +75,7 @@ CREATE TABLE IF NOT EXISTS video_detections (
   colors JSONB,
   assets JSONB,
   latency_ms INTEGER,
+  gflops DOUBLE PRECISION,
   memory_usage DOUBLE PRECISION,
   status TEXT NOT NULL DEFAULT 'done',
   error_msg TEXT,

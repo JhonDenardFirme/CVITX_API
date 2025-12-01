@@ -517,9 +517,7 @@ def _process_one_video(body: Dict[str, Any]) -> int:
         workspace_id=ws_id,
         video_id=vid,
         variant=variant,
-        source_kind="snapshot",
         run_id=run_id,
-        snapshot_s3_key=None,
     )
 
     # Download & open

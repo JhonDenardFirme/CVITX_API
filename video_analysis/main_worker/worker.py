@@ -357,7 +357,11 @@ def _process_one(msg_body: Dict[str, Any], receipt: str) -> None:
             analysis_id=aid,
             run_id=run_id,
             track_id=track_id,
-            payload=per_track,
+            snapshot_s3_key=f"s3://{bkt}/{key}",
+            yolo_type=snap.get("yolo_type"),
+            detected_in_ms=int(snap.get("detectedIn") or 0),
+            detected_at=snap.get("detectedAt"),
+            result=per_track,
         )
 
         log.info(

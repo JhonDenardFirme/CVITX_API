@@ -1,6 +1,6 @@
 BEGIN;
 
--- 1) Extend video_analyses with V2/V3 run metadata + timing/memory (idempotent)
+-- 1) Extend video_analyses with V2/V3 run metadata + timing/memory/compute (idempotent)
 ALTER TABLE video_analyses
   ADD COLUMN IF NOT EXISTS variant TEXT NOT NULL DEFAULT 'cmt',
   ADD COLUMN IF NOT EXISTS run_id UUID,
@@ -12,6 +12,7 @@ ALTER TABLE video_analyses
   ADD COLUMN IF NOT EXISTS run_finished_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS last_snapshot_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS latency_ms INTEGER,
+  ADD COLUMN IF NOT EXISTS gflops DOUBLE PRECISION,
   ADD COLUMN IF NOT EXISTS memory_usage DOUBLE PRECISION;
 
 -- 2) snapshot_s3_key: drop NOT NULL + drop old uniqueness
@@ -68,6 +69,7 @@ CREATE TABLE IF NOT EXISTS video_detections (
   colors JSONB,
   assets JSONB,
   latency_ms INTEGER,
+  gflops DOUBLE PRECISION,
   memory_usage DOUBLE PRECISION,
   status TEXT NOT NULL DEFAULT 'done',
   error_msg TEXT,
@@ -140,6 +142,14 @@ BEGIN
     ALTER TABLE video_detections ADD COLUMN memory_usage DOUBLE PRECISION;
   END IF;
 END $$;
+
+-- 11) Ensure gflops exists on video_analysis_results
+ALTER TABLE IF EXISTS video_analysis_results
+  ADD COLUMN IF NOT EXISTS gflops DOUBLE PRECISION;
+
+-- 12) Ensure gflops exists on video_detections (if table existed before with older schema)
+ALTER TABLE IF EXISTS video_detections
+  ADD COLUMN IF NOT EXISTS gflops DOUBLE PRECISION;
 
 COMMIT;
 
