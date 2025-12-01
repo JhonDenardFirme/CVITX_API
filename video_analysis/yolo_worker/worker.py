@@ -488,8 +488,8 @@ def _process_one_video(body: Dict[str, Any]) -> int:
             "frame_stride": int(
                 vrow.get("frame_stride") or int(CONFIG["FRAME_STRIDE_DEFAULT"])
             ),
-            # normalize to the same ISO field used by the API route
-            "recordedAt": recorded_at.isoformat() if recorded_at else None,
+            # already returned as ISO8601 string by get_video_by_id
+            "recordedAt": recorded_at,
             "variant": payload.get("variant") or "cmt",
             "run_id": payload.get("run_id"),
         }
@@ -507,6 +507,7 @@ def _process_one_video(body: Dict[str, Any]) -> int:
     cam_code = str(full["camera_code"])
     s3_key_raw = str(full["s3_key_raw"])
     stride = int(full.get("frame_stride") or int(CONFIG["FRAME_STRIDE_DEFAULT"]))
+
     recorded_at_iso = full.get("recordedAt")
     variant = full["variant"]
     run_id = full["run_id"]
@@ -737,3 +738,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

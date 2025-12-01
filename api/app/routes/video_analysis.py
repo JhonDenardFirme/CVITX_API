@@ -535,7 +535,7 @@ def list_video_detections(
                        parts,
                        assets,
                        latency_ms,
-                       memory_usage AS memory_gb,
+                       memory_usage,
                        status,
                        error_msg
                   FROM video_detections
@@ -572,7 +572,7 @@ def list_video_detections(
                 colors=[ColorFBL(**c) for c in colors_raw],
                 parts=[PartEvidence(**p) for p in parts_raw],
                 latencyMs=r.get("latency_ms"),
-                memoryGb=r.get("memory_gb"),
+                memoryGb=r.get("memory_usage"),
                 status=r["status"],
                 errorMsg=r.get("error_msg"),
                 assets=DetectionAssets(
@@ -636,7 +636,7 @@ def get_video_detection(
                        d.parts,
                        d.assets,
                        d.latency_ms,
-                       d.memory_usage AS memory_gb,
+                       d.memory_usage,
                        d.status,
                        d.error_msg
                   FROM video_detections d
@@ -687,7 +687,7 @@ def get_video_detection(
         colors=[ColorFBL(**c) for c in colors_raw],
         parts=[PartEvidence(**p) for p in parts_raw],
         latencyMs=r.get("latency_ms"),
-        memoryGb=r.get("memory_gb"),
+        memoryGb=r.get("memory_usage"),
         status=r["status"],
         errorMsg=r.get("error_msg"),
         assets=assets,
@@ -807,3 +807,4 @@ def update_video_detection(
         ttl=ANALYSIS_TTL_DEFAULT,
         me=me,  # type: ignore[arg-type]
     )
+

@@ -352,7 +352,7 @@ def create_image_analysis(snapshot_s3_key: str, workspace_id: str) -> str:
 
 def upsert_results(analysis_id: str, variant: str, result: Dict[str, Any]) -> None:
     """
-    Upsert a result row into image_analysis_results (UNIQUE(analysis_id, variant)).
+    Upsert a result row into image_analysis_results (UNIQUE(analysis_id, model_variant)).
     Expected 'result' shape (keys are optional; absent ones become NULL/{}):
       {
         "type":  {"label": str, "conf": float},
@@ -379,7 +379,7 @@ def upsert_results(analysis_id: str, variant: str, result: Dict[str, Any]) -> No
     sql = """
     INSERT INTO image_analysis_results (
       analysis_id,
-      variant,
+      model_variant,
       type_label,  type_conf,
       make_label,  make_conf,
       model_label, model_conf,
@@ -394,7 +394,7 @@ def upsert_results(analysis_id: str, variant: str, result: Dict[str, Any]) -> No
     )
     VALUES (
       %(analysis_id)s,
-      %(variant)s,
+      %(model_variant)s,
       %(type_label)s,  %(type_conf)s,
       %(make_label)s,  %(make_conf)s,
       %(model_label)s, %(model_conf)s,
@@ -407,7 +407,7 @@ def upsert_results(analysis_id: str, variant: str, result: Dict[str, Any]) -> No
       NOW(),
       NOW()
     )
-    ON CONFLICT (analysis_id, variant)
+    ON CONFLICT (analysis_id, model_variant)
     DO UPDATE SET
       type_label   = EXCLUDED.type_label,
       type_conf    = EXCLUDED.type_conf,
@@ -427,7 +427,7 @@ def upsert_results(analysis_id: str, variant: str, result: Dict[str, Any]) -> No
 
     params = {
         "analysis_id": str(analysis_id),
-        "variant": str(variant),
+        "model_variant": str(variant),
         "type_label": type_obj.get("label"),
         "type_conf": float(type_obj.get("conf")) if type_obj.get("conf") is not None else None,
         "make_label": make_obj.get("label"),
@@ -674,6 +674,8 @@ def start_video_run(workspace_id: str, video_id: str, variant: str, run_id: str)
                         video_id,
                         variant,
                         run_id,
+                        source_kind,
+                        snapshot_s3_key,
                         status,
                         expected_snapshots,
                         processed_snapshots,
@@ -692,6 +694,8 @@ def start_video_run(workspace_id: str, video_id: str, variant: str, run_id: str)
                         :vid,
                         :variant,
                         :run_id,
+                        'video',
+                        NULL,
                         'running',
                         0,
                         0,
@@ -724,19 +728,21 @@ def start_video_run(workspace_id: str, video_id: str, variant: str, run_id: str)
                 """
                 UPDATE video_analyses
                 SET
-                    run_id             = :run_id,
-                    status             = 'running',
-                    expected_snapshots = 0,
+                    run_id              = :run_id,
+                    source_kind         = 'video',
+                    snapshot_s3_key     = NULL,
+                    status              = 'running',
+                    expected_snapshots  = 0,
                     processed_snapshots = 0,
-                    processed_ok       = 0,
-                    processed_err      = 0,
-                    run_started_at     = :now,
-                    run_finished_at    = NULL,
-                    last_snapshot_at   = NULL,
-                    error_msg          = NULL,
-                    latency_ms         = NULL,
-                    memory_usage       = NULL,
-                    updated_at         = :now
+                    processed_ok        = 0,
+                    processed_err       = 0,
+                    run_started_at      = :now,
+                    run_finished_at     = NULL,
+                    last_snapshot_at    = NULL,
+                    error_msg           = NULL,
+                    latency_ms          = NULL,
+                    memory_usage        = NULL,
+                    updated_at          = :now
                 WHERE id = :id
                 """
             ),

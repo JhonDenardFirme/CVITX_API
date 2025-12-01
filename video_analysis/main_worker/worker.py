@@ -328,6 +328,17 @@ def _process_one(msg_body: Dict[str, Any], receipt: str) -> None:
         # Normalize colors into FBL-style objects (finish/base/lightness/conf)
         fbl_colors = coerce_fbl_colors(dets)
 
+        # Normalize memory metrics:
+        # - Prefer mem_gb / memory_gb from the engine metrics (absolute GB)
+        # - Fall back to memory_usage if that's the only field available
+        mem_gb = None
+        if isinstance(metrics, dict):
+            mem_gb = (
+                metrics.get("mem_gb")
+                or metrics.get("memory_gb")
+                or metrics.get("memory_usage")
+            )
+
         per_track: Dict[str, Any] = {
             "snapshot_s3_key": f"s3://{bkt}/{key}",
             "detected_in_ms": int(snap.get("detectedIn") or 0),
@@ -345,9 +356,10 @@ def _process_one(msg_body: Dict[str, Any], receipt: str) -> None:
             "parts": parts_list,
             "assets": assets,
             "latency_ms": int(
-                (metrics.get("latency_ms") or timings.get("total") or 0.0)
+                ((metrics or {}).get("latency_ms") or timings.get("total") or 0.0)
             ),
-            "memory_gb": metrics.get("mem_gb") or metrics.get("memory_gb"),
+            # DB column is memory_usage (GB); API later exposes memory_gb from this.
+            "memory_usage": mem_gb,
             "status": "done",
             "error_msg": None,
         }

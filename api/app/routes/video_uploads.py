@@ -299,7 +299,7 @@ def enqueue_video(
             text(
                 """
                 UPDATE videos
-                   SET status = 'processing',
+                   SET status = 'queued',
                        updated_at = now()
                  WHERE id = :vid
                 """
@@ -573,3 +573,4 @@ def delete_video(
         "videoId": str(video["id"]),
         "deleted": True,
     }
+
