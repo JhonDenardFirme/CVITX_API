@@ -80,6 +80,11 @@ class DeleteVideoIn(BaseModel):
     confirmCameraCode: str
 
 
+class VideoUrlOut(BaseModel):
+    url: str
+    ttl: int
+
+
 @router.post("/{workspace_id}/videos/presign")
 def presign_video(workspace_id: str, body: VideoPresignIn, me=Depends(require_user)):
     if body.file_size_bytes <= 0 or body.file_size_bytes > MAX_VIDEO_BYTES:
@@ -241,6 +246,39 @@ def commit_video(workspace_id: str, body: VideoCommitIn, me=Depends(require_user
     }
 
     return {"video": video, "autoEnqueued": False}
+
+
+@router.get("/{workspace_id}/videos/{video_id}/url", response_model=VideoUrlOut)
+def get_video_url(workspace_id: str, video_id: str, ttl: int = 900, me=Depends(require_user)):
+    """
+    Returns a presigned **GET** URL for the raw uploaded video (for preview).
+    """
+    effective_ttl = max(60, min(int(ttl), 3600))
+
+    with engine.begin() as conn:
+        _assert_workspace(conn, workspace_id, str(me.id))
+        row = conn.execute(
+            text(
+                "SELECT s3_key_raw FROM videos WHERE id = :vid AND workspace_id = :wid"
+            ),
+            {"vid": video_id, "wid": workspace_id},
+        ).mappings().first()
+
+        if not row or not row["s3_key_raw"]:
+            raise HTTPException(status_code=404, detail="Video not found")
+
+        key = row["s3_key_raw"]
+
+    try:
+        url = s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": settings.s3_bucket, "Key": key},
+            ExpiresIn=effective_ttl,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to presign GET: {e}") from e
+
+    return {"url": url, "ttl": effective_ttl}
 
 
 @router.post("/{workspace_id}/videos/{video_id}/enqueue")
