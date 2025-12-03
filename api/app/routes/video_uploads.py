@@ -11,6 +11,7 @@ from sqlalchemy import create_engine, text
 from app.auth.deps import require_user
 from app.config import settings
 from app.services.sqs import send_json
+from app.routes.video_analysis import VideoRowOut
 
 DB_URL = os.getenv("DATABASE_URL") or os.getenv("DB_URL")
 if not DB_URL:
@@ -21,7 +22,9 @@ engine = create_engine(DB_URL, pool_pre_ping=True)
 s3 = boto3.client("s3", region_name=settings.aws_region)
 S3_RAW_PREFIX = os.getenv("S3_VIDEO_RAW_PREFIX", "demo_user")
 SQS_VIDEO_QUEUE_URL = os.getenv("SQS_VIDEO_QUEUE_URL")
-MAX_VIDEO_BYTES = int(os.getenv("VIDEO_UPLOAD_MAX_BYTES", str(5 * 1024 * 1024 * 1024)))  # 5GB
+MAX_VIDEO_BYTES = int(
+    os.getenv("VIDEO_UPLOAD_MAX_BYTES", str(5 * 1024 * 1024 * 1024))
+)
 
 router = APIRouter(prefix="/workspaces", tags=["video-uploads"])
 
@@ -85,8 +88,17 @@ class VideoUrlOut(BaseModel):
     ttl: int
 
 
+class VideosListOut(BaseModel):
+    workspaceId: str
+    items: List[VideoRowOut]
+
+
 @router.post("/{workspace_id}/videos/presign")
-def presign_video(workspace_id: str, body: VideoPresignIn, me=Depends(require_user)):
+def presign_video(
+    workspace_id: str,
+    body: VideoPresignIn,
+    me=Depends(require_user),
+):
     if body.file_size_bytes <= 0 or body.file_size_bytes > MAX_VIDEO_BYTES:
         raise HTTPException(
             status_code=400,
@@ -112,7 +124,10 @@ def presign_video(workspace_id: str, body: VideoPresignIn, me=Depends(require_us
             HttpMethod="PUT",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate presigned URL: {e}") from e
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate presigned URL: {e}",
+        ) from e
 
     return {
         "videoId": video_id,
@@ -129,7 +144,11 @@ def presign_video(workspace_id: str, body: VideoPresignIn, me=Depends(require_us
 
 
 @router.post("/{workspace_id}/videos/commit")
-def commit_video(workspace_id: str, body: VideoCommitIn, me=Depends(require_user)):
+def commit_video(
+    workspace_id: str,
+    body: VideoCommitIn,
+    me=Depends(require_user),
+):
     with engine.begin() as conn:
         _assert_workspace(conn, workspace_id, str(me.id))
 
@@ -229,7 +248,10 @@ def commit_video(workspace_id: str, body: VideoCommitIn, me=Depends(require_user
         ).mappings().first()
 
     if not row:
-        raise HTTPException(status_code=500, detail="Video record not found after commit")
+        raise HTTPException(
+            status_code=500,
+            detail="Video record not found after commit",
+        )
 
     video = {
         "id": row["id"],
@@ -238,20 +260,29 @@ def commit_video(workspace_id: str, body: VideoCommitIn, me=Depends(require_user
         "fileName": row["file_name"],
         "cameraLabel": row.get("camera_label"),
         "cameraCode": row["camera_code"],
-        "recordedAt": row["recorded_at"].isoformat() if row["recorded_at"] else None,
+        "recordedAt": row["recorded_at"].isoformat()
+        if row["recorded_at"]
+        else None,
         "s3KeyRaw": row["s3_key_raw"],
         "frameStride": row["frame_stride"],
         "status": row["status"],
-        "updatedAt": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        "updatedAt": row["updated_at"].isoformat()
+        if row.get("updated_at")
+        else None,
     }
 
     return {"video": video, "autoEnqueued": False}
 
 
 @router.get("/{workspace_id}/videos/{video_id}/url", response_model=VideoUrlOut)
-def get_video_url(workspace_id: str, video_id: str, ttl: int = 900, me=Depends(require_user)):
+def get_video_url(
+    workspace_id: str,
+    video_id: str,
+    ttl: int = 900,
+    me=Depends(require_user),
+):
     """
-    Returns a presigned **GET** URL for the raw uploaded video (for preview).
+    Returns a presigned GET URL for the raw uploaded video (for preview).
     """
     effective_ttl = max(60, min(int(ttl), 3600))
 
@@ -259,7 +290,12 @@ def get_video_url(workspace_id: str, video_id: str, ttl: int = 900, me=Depends(r
         _assert_workspace(conn, workspace_id, str(me.id))
         row = conn.execute(
             text(
-                "SELECT s3_key_raw FROM videos WHERE id = :vid AND workspace_id = :wid"
+                """
+                SELECT s3_key_raw
+                  FROM videos
+                 WHERE id = :vid
+                   AND workspace_id = :wid
+                """
             ),
             {"vid": video_id, "wid": workspace_id},
         ).mappings().first()
@@ -276,9 +312,77 @@ def get_video_url(workspace_id: str, video_id: str, ttl: int = 900, me=Depends(r
             ExpiresIn=effective_ttl,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to presign GET: {e}") from e
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to presign GET: {e}",
+        ) from e
 
     return {"url": url, "ttl": effective_ttl}
+
+
+@router.get("/{workspace_id}/videos", response_model=VideosListOut)
+def list_videos(
+    workspace_id: str,
+    me=Depends(require_user),
+):
+    """
+    Lists all videos for a workspace.
+
+    Returns:
+    - workspaceId
+    - items: VideoRowOut objects (camelCase), consistent with commit/get_video_detail.
+    """
+    with engine.begin() as conn:
+        _assert_workspace(conn, workspace_id, str(me.id))
+        rows = conn.execute(
+            text(
+                """
+                SELECT id,
+                       workspace_id,
+                       workspace_code,
+                       file_name,
+                       camera_label,
+                       camera_code,
+                       recorded_at,
+                       s3_key_raw,
+                       frame_stride,
+                       status,
+                       created_at,
+                       updated_at,
+                       error_msg,
+                       processing_started_at,
+                       processing_finished_at
+                  FROM videos
+                 WHERE workspace_id = :wid
+                 ORDER BY created_at DESC
+                """
+            ),
+            {"wid": workspace_id},
+        ).mappings().all()
+
+    items: List[VideoRowOut] = []
+    for v in rows:
+        items.append(
+            VideoRowOut(
+                id=v["id"],
+                workspaceId=v["workspace_id"],
+                workspaceCode=v.get("workspace_code"),
+                fileName=v["file_name"],
+                cameraLabel=v.get("camera_label"),
+                cameraCode=v["camera_code"],
+                recordedAt=v.get("recorded_at"),
+                s3KeyRaw=v["s3_key_raw"],
+                frameStride=v["frame_stride"],
+                status=v["status"],
+                createdAt=v.get("created_at"),
+                updatedAt=v.get("updated_at"),
+                errorMsg=v.get("error_msg"),
+                processingStartedAt=v.get("processing_started_at"),
+                processingFinishedAt=v.get("processing_finished_at"),
+            )
+        )
+
+    return VideosListOut(workspaceId=workspace_id, items=items)
 
 
 @router.post("/{workspace_id}/videos/{video_id}/enqueue")
@@ -289,7 +393,10 @@ def enqueue_video(
     me=Depends(require_user),
 ):
     if not SQS_VIDEO_QUEUE_URL:
-        raise HTTPException(status_code=500, detail="Video queue not configured")
+        raise HTTPException(
+            status_code=500,
+            detail="Video queue not configured",
+        )
 
     with engine.begin() as conn:
         _assert_workspace(conn, workspace_id, str(me.id))
@@ -325,7 +432,9 @@ def enqueue_video(
             "camera_code": v["camera_code"],
             "s3_key_raw": v["s3_key_raw"],
             "frame_stride": v["frame_stride"],
-            "recordedAt": v["recorded_at"].isoformat() if v["recorded_at"] else None,
+            "recordedAt": v["recorded_at"].isoformat()
+            if v["recorded_at"]
+            else None,
         }
 
         if body.variant:
@@ -400,7 +509,6 @@ def update_video(
         if not row:
             raise HTTPException(status_code=404, detail="Video not found")
 
-        # If nothing to update, just return current snapshot
         if not data:
             return {
                 "video": {
@@ -410,11 +518,15 @@ def update_video(
                     "fileName": row["file_name"],
                     "cameraLabel": row.get("camera_label"),
                     "cameraCode": row["camera_code"],
-                    "recordedAt": row["recorded_at"].isoformat() if row["recorded_at"] else None,
+                    "recordedAt": row["recorded_at"].isoformat()
+                    if row["recorded_at"]
+                    else None,
                     "s3KeyRaw": row["s3_key_raw"],
                     "frameStride": row["frame_stride"],
                     "status": row["status"],
-                    "updatedAt": row["updated_at"].isoformat() if row.get("updated_at") else None,
+                    "updatedAt": row["updated_at"].isoformat()
+                    if row.get("updated_at")
+                    else None,
                 },
                 "autoEnqueued": False,
             }
@@ -439,11 +551,15 @@ def update_video(
                     "fileName": row["file_name"],
                     "cameraLabel": row.get("camera_label"),
                     "cameraCode": row["camera_code"],
-                    "recordedAt": row["recorded_at"].isoformat() if row["recorded_at"] else None,
+                    "recordedAt": row["recorded_at"].isoformat()
+                    if row["recorded_at"]
+                    else None,
                     "s3KeyRaw": row["s3_key_raw"],
                     "frameStride": row["frame_stride"],
                     "status": row["status"],
-                    "updatedAt": row["updated_at"].isoformat() if row.get("updated_at") else None,
+                    "updatedAt": row["updated_at"].isoformat()
+                    if row.get("updated_at")
+                    else None,
                 },
                 "autoEnqueued": False,
             }
@@ -488,11 +604,15 @@ def update_video(
             "fileName": updated["file_name"],
             "cameraLabel": updated.get("camera_label"),
             "cameraCode": updated["camera_code"],
-            "recordedAt": updated["recorded_at"].isoformat() if updated["recorded_at"] else None,
+            "recordedAt": updated["recorded_at"].isoformat()
+            if updated["recorded_at"]
+            else None,
             "s3KeyRaw": updated["s3_key_raw"],
             "frameStride": updated["frame_stride"],
             "status": updated["status"],
-            "updatedAt": updated["updated_at"].isoformat() if updated.get("updated_at") else None,
+            "updatedAt": updated["updated_at"].isoformat()
+            if updated.get("updated_at")
+            else None,
         },
         "autoEnqueued": False,
     }
@@ -539,7 +659,6 @@ def delete_video(
                 detail="Confirmation camera code does not match",
             )
 
-        # Block deletion if there are active analyses
         active = conn.execute(
             text(
                 """
@@ -559,7 +678,6 @@ def delete_video(
                 detail="Cannot delete video while analyses are still running",
             )
 
-        # Gather analyses for cascade delete
         analysis_ids: List[str] = [
             row["id"]
             for row in conn.execute(
@@ -577,15 +695,21 @@ def delete_video(
 
         if analysis_ids:
             conn.execute(
-                text("DELETE FROM video_detections WHERE analysis_id = ANY(:aids)"),
+                text(
+                    "DELETE FROM video_detections WHERE analysis_id = ANY(:aids)"
+                ),
                 {"aids": analysis_ids},
             )
             conn.execute(
-                text("DELETE FROM video_analysis_results WHERE analysis_id = ANY(:aids)"),
+                text(
+                    "DELETE FROM video_analysis_results WHERE analysis_id = ANY(:aids)"
+                ),
                 {"aids": analysis_ids},
             )
             conn.execute(
-                text("DELETE FROM video_analyses WHERE id = ANY(:aids)"),
+                text(
+                    "DELETE FROM video_analyses WHERE id = ANY(:aids)"
+                ),
                 {"aids": analysis_ids},
             )
 
@@ -600,10 +724,12 @@ def delete_video(
             {"vid": video_id, "wid": workspace_id},
         )
 
-    # Optionally clean up the raw S3 object (best-effort; ignore errors)
     if video.get("s3_key_raw"):
         try:
-            s3.delete_object(Bucket=settings.s3_bucket, Key=video["s3_key_raw"])
+            s3.delete_object(
+                Bucket=settings.s3_bucket,
+                Key=video["s3_key_raw"],
+            )
         except Exception:
             pass
 
