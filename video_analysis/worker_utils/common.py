@@ -719,6 +719,20 @@ def start_video_run(workspace_id: str, video_id: str, variant: str, run_id: str)
                     "now": now,
                 },
             )
+            # NEW: mark parent video as processing on first run creation
+            conn.execute(
+                text(
+                    """
+                    UPDATE videos
+                       SET status               = 'processing',
+                           processing_started_at = COALESCE(processing_started_at, :now),
+                           updated_at           = :now
+                     WHERE id = :vid
+                       AND status <> 'error'
+                    """
+                ),
+                {"vid": video_id, "now": now},
+            )
             return analysis_id
 
         analysis_id = str(existing["id"])
@@ -747,6 +761,21 @@ def start_video_run(workspace_id: str, video_id: str, variant: str, run_id: str)
                 """
             ),
             {"id": analysis_id, "run_id": run_id, "now": now},
+        )
+
+        # NEW: ensure parent video is in processing state on re-runs
+        conn.execute(
+            text(
+                """
+                UPDATE videos
+                   SET status               = 'processing',
+                       processing_started_at = COALESCE(processing_started_at, :now),
+                       updated_at           = :now
+                 WHERE id = :vid
+                   AND status <> 'error'
+                """
+            ),
+            {"vid": video_id, "now": now},
         )
 
         return analysis_id
@@ -811,6 +840,8 @@ def get_video_run(workspace_id: str, video_id: str, variant: str) -> Optional[Di
         "last_snapshot_at": row["last_snapshot_at"],
         "error_msg": row["error_msg"],
     }
+
+
 def set_video_expected(analysis_id: str, expected: int) -> None:
     """
     Set expected_snapshots for a run container.
@@ -860,7 +891,7 @@ def upsert_video_detection_and_progress(
           "plate_image_s3_key":     str|None
         },
         "latency_ms": int,
-        "memory_gb": float|None,
+        "memory_usage": float|None,
         "status": "done"|"error",
         "error_msg": str|None
       }
@@ -888,7 +919,8 @@ def upsert_video_detection_and_progress(
     parts = result.get("parts") or []
     assets = result.get("assets") or {}
     latency_ms = int(result.get("latency_ms") or 0)
-    memory_gb = result.get("memory_gb")
+    # C3: align with main_worker per_track payload ("memory_usage")
+    memory_usage_val = result.get("memory_usage")
     status = result.get("status") or "done"
     error_msg = result.get("error_msg")
 
@@ -988,7 +1020,7 @@ def upsert_video_detection_and_progress(
                 "parts": PgJson(parts),
                 "assets": PgJson(assets),
                 "latency_ms": latency_ms,
-                "memory_usage": float(memory_gb) if memory_gb is not None else None,
+                "memory_usage": float(memory_usage_val) if memory_usage_val is not None else None,
                 "status": status,
                 "error_msg": error_msg,
             },
@@ -1009,6 +1041,64 @@ def upsert_video_detection_and_progress(
             ),
             {"aid": analysis_id, "ok": is_ok, "detected_at": det_at},
         )
+
+        # NEW: Finalize run + parent video when we've processed all expected snapshots
+        row = conn.execute(
+            text(
+                """
+                SELECT video_id,
+                       expected_snapshots,
+                       processed_snapshots,
+                       processed_err,
+                       status
+                  FROM video_analyses
+                 WHERE id = :aid
+                 FOR UPDATE
+                """
+            ),
+            {"aid": analysis_id},
+        ).mappings().first()
+
+        if row:
+            expected = row["expected_snapshots"] or 0
+            processed = row["processed_snapshots"] or 0
+            status_cur = row["status"]
+            video_id = row["video_id"]
+
+            # Only auto-complete for active runs with a known snapshot count
+            if (
+                expected > 0
+                and processed >= expected
+                and status_cur not in ("done", "error")
+            ):
+                # Mark the analysis as done
+                conn.execute(
+                    text(
+                        """
+                        UPDATE video_analyses
+                           SET status          = 'done',
+                               run_finished_at = COALESCE(run_finished_at, now()),
+                               updated_at      = now()
+                         WHERE id = :aid
+                        """
+                    ),
+                    {"aid": analysis_id},
+                )
+
+                # Mark the parent video as done (non-fatal if other variants exist)
+                conn.execute(
+                    text(
+                        """
+                        UPDATE videos
+                           SET status                = 'done',
+                               processing_finished_at = COALESCE(processing_finished_at, now()),
+                               updated_at            = now()
+                         WHERE id = :vid
+                           AND status <> 'error'
+                        """
+                    ),
+                    {"vid": video_id},
+                )
 
 
 # ============================ Key / Path Builders =========================== #
