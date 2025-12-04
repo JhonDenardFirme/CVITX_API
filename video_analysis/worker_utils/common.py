@@ -30,6 +30,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Any, Dict, Literal, Optional, Tuple, TypedDict
+from urllib.parse import urlparse
 
 import boto3
 import cv2
@@ -611,6 +612,7 @@ def set_video_analysis_status(analysis_id: str, status: str, error_msg: Optional
     Used for fatal errors or explicit cancellation.
     """
     with _video_conn() as conn:
+        # Update the analysis row itself
         conn.execute(
             text(
                 """
@@ -628,6 +630,26 @@ def set_video_analysis_status(analysis_id: str, status: str, error_msg: Optional
             ),
             {"aid": analysis_id, "status": status, "error_msg": error_msg},
         )
+
+        # If the run failed, propagate an error state to the parent video.
+        if status == "error":
+            conn.execute(
+                text(
+                    """
+                    UPDATE videos
+                       SET status                = 'error',
+                           processing_finished_at = COALESCE(processing_finished_at, now()),
+                           updated_at            = now()
+                     WHERE id = (
+                         SELECT video_id
+                           FROM video_analyses
+                          WHERE id = :aid
+                          LIMIT 1
+                     )
+                    """
+                ),
+                {"aid": analysis_id},
+            )
 
 
 def start_video_run(workspace_id: str, video_id: str, variant: str, run_id: str) -> str:
@@ -892,6 +914,7 @@ def upsert_video_detection_and_progress(
         },
         "latency_ms": int,
         "memory_usage": float|None,
+        "gflops": float|None,
         "status": "done"|"error",
         "error_msg": str|None
       }
@@ -911,6 +934,16 @@ def upsert_video_detection_and_progress(
         # Already a datetime or None — use as-is.
         det_at = detected_at
 
+    # Ensure we store a bucket-relative key even if a full s3:// URI is passed.
+    snap_key = snapshot_s3_key
+    if isinstance(snap_key, str) and snap_key.startswith("s3://"):
+        try:
+            p = urlparse(snap_key)
+            snap_key = p.path.lstrip("/") or snap_key
+        except Exception:
+            # On parse failure, fall back to the original value.
+            pass
+
     type_obj = result.get("type") or {}
     make_obj = result.get("make") or {}
     model_obj = result.get("model") or {}
@@ -921,6 +954,7 @@ def upsert_video_detection_and_progress(
     latency_ms = int(result.get("latency_ms") or 0)
     # C3: align with main_worker per_track payload ("memory_usage")
     memory_usage_val = result.get("memory_usage")
+    gflops_val = result.get("gflops")
     status = result.get("status") or "done"
     error_msg = result.get("error_msg")
 
@@ -945,6 +979,7 @@ def upsert_video_detection_and_progress(
       assets,
       latency_ms,
       memory_usage,
+      gflops,
       status,
       error_msg,
       created_at,
@@ -967,6 +1002,7 @@ def upsert_video_detection_and_progress(
       :assets,
       :latency_ms,
       :memory_usage,
+      :gflops,
       :status,
       :error_msg,
       now(),
@@ -991,6 +1027,7 @@ def upsert_video_detection_and_progress(
       assets          = EXCLUDED.assets,
       latency_ms      = EXCLUDED.latency_ms,
       memory_usage    = EXCLUDED.memory_usage,
+      gflops          = EXCLUDED.gflops,
       status          = EXCLUDED.status,
       error_msg       = EXCLUDED.error_msg,
       updated_at      = now();
@@ -1004,7 +1041,7 @@ def upsert_video_detection_and_progress(
                 "analysis_id": analysis_id,
                 "run_id": run_id,
                 "track_id": int(track_id),
-                "snapshot_s3_key": snapshot_s3_key,
+                "snapshot_s3_key": snap_key,
                 "yolo_type": yolo_type,
                 "detected_in_ms": int(detected_in_ms),
                 "detected_at": det_at,
@@ -1021,6 +1058,7 @@ def upsert_video_detection_and_progress(
                 "assets": PgJson(assets),
                 "latency_ms": latency_ms,
                 "memory_usage": float(memory_usage_val) if memory_usage_val is not None else None,
+                "gflops": float(gflops_val) if gflops_val is not None else None,
                 "status": status,
                 "error_msg": error_msg,
             },

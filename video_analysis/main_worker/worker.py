@@ -281,6 +281,8 @@ def _process_one(msg_body: Dict[str, Any], receipt: str) -> None:
         run_id = str(snap["run_id"])
         track_id = int(snap["track_id"])
         bkt, key = _bucket_key(snap["snapshot_s3_key"])
+        # Bucket-relative key; this is what we store in DB/API.
+        snapshot_key = key
 
         # 2) Canonical run lookup (or bootstrap fallback)
         current = get_video_run(wid, vid, variant)
@@ -332,15 +334,18 @@ def _process_one(msg_body: Dict[str, Any], receipt: str) -> None:
         # - Prefer mem_gb / memory_gb from the engine metrics (absolute GB)
         # - Fall back to memory_usage if that's the only field available
         mem_gb = None
+        gflops = None
         if isinstance(metrics, dict):
             mem_gb = (
                 metrics.get("mem_gb")
                 or metrics.get("memory_gb")
                 or metrics.get("memory_usage")
             )
+            # Optional performance metric (may be absent depending on engine)
+            gflops = metrics.get("gflops")
 
         per_track: Dict[str, Any] = {
-            "snapshot_s3_key": f"s3://{bkt}/{key}",
+            "snapshot_s3_key": snapshot_key,
             "detected_in_ms": int(snap.get("detectedIn") or 0),
             "detected_at": snap.get("detectedAt"),
             "yolo_type": snap.get("yolo_type"),
@@ -360,6 +365,7 @@ def _process_one(msg_body: Dict[str, Any], receipt: str) -> None:
             ),
             # DB column is memory_usage (GB); API later exposes memory_gb from this.
             "memory_usage": mem_gb,
+            "gflops": gflops,
             "status": "done",
             "error_msg": None,
         }
@@ -369,7 +375,7 @@ def _process_one(msg_body: Dict[str, Any], receipt: str) -> None:
             analysis_id=aid,
             run_id=run_id,
             track_id=track_id,
-            snapshot_s3_key=f"s3://{bkt}/{key}",
+            snapshot_s3_key=snapshot_key,
             yolo_type=snap.get("yolo_type"),
             detected_in_ms=int(snap.get("detectedIn") or 0),
             detected_at=snap.get("detectedAt"),

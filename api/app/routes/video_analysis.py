@@ -185,6 +185,7 @@ class DetectionOut(BaseModel):
     trackId: int
     snapshotS3Key: str
     yoloType: Optional[str] = None
+
     typeLabel: Optional[str] = None
     typeConf: Optional[float] = None
     makeLabel: Optional[str] = None
@@ -193,10 +194,20 @@ class DetectionOut(BaseModel):
     modelConf: Optional[float] = None
     plateText: Optional[str] = None
     plateConf: Optional[float] = None
+
+    # Timing fields for player seek and logging
+    detectedInMs: Optional[int] = None
+    detectedAt: Optional[datetime] = None
+
     colors: List[ColorFBL] = []
     parts: List[PartEvidence] = []
+
     latencyMs: Optional[int] = None
     memoryGb: Optional[float] = None
+
+    # Per-detection GFLOPs, aligned with video_detections.gflops
+    gflops: Optional[float] = None
+
     status: str
     errorMsg: Optional[str] = None
     assets: DetectionAssets
@@ -208,6 +219,24 @@ class DetectionListOut(BaseModel):
     variant: str
     runId: str
     items: List[DetectionOut]
+
+
+class WorkspaceDetectionOut(DetectionOut):
+    """
+    Workspace-level detection row. Same shape as DetectionOut but includes videoId.
+    """
+    videoId: str
+
+
+class WorkspaceDetectionsOut(BaseModel):
+    """
+    Workspace-level list of detections for a given variant.
+
+    Each item is the full DetectionOut shape plus videoId.
+    """
+    workspaceId: str
+    variant: str
+    items: List[WorkspaceDetectionOut]
 
 
 class DetectionUpdateIn(BaseModel):
@@ -467,14 +496,21 @@ def list_video_detections(
     video_id: str,
     variant: str = Query("cmt"),
     runId: Optional[str] = Query(None),
+    presign: int = Query(0, ge=0, le=1),
+    ttl: int = Query(ANALYSIS_TTL_DEFAULT, ge=60, le=604800),
     me=Depends(require_user),
 ):
     """
-    Lists per-vehicle/per-snapshot detections for the given video.
+    Lists per-vehicle and per-snapshot detections for the given video.
 
-    - Default: uses the current run_id from video_analyses for the variant.
-    - Returns one row per (analysis_id, run_id, track_id).
+    By default, it uses the current run_id from video_analyses for the requested
+    variant and returns one row per (analysis_id, run_id, track_id).
+
+    When presign=1, it attaches annotatedUrl, vehicleUrl, and plateUrl for each
+    detection based on the stored S3 keys in the assets JSONB field.
     """
+    effective_ttl = min(int(ttl), ANALYSIS_TTL_DEFAULT)
+
     with engine.begin() as conn:
         _assert_workspace(conn, workspace_id, str(me.id))
 
@@ -505,7 +541,7 @@ def list_video_detections(
         effective_run_id = runId or (str(va["run_id"]) if va["run_id"] else None)
 
         if not effective_run_id:
-            # No run yet → no detections
+            # No run yet, so no detections to return
             return DetectionListOut(
                 workspaceId=workspace_id,
                 videoId=video_id,
@@ -531,11 +567,14 @@ def list_video_detections(
                        model_conf,
                        plate_text,
                        plate_conf,
+                       detected_in_ms,
+                       detected_at,
                        colors,
                        parts,
                        assets,
                        latency_ms,
                        memory_usage,
+                       gflops,
                        status,
                        error_msg
                   FROM video_detections
@@ -553,6 +592,18 @@ def list_video_detections(
         parts_raw = r.get("parts") or []
         assets_raw = r.get("assets") or {}
 
+        if presign:
+            assets_raw = _presign_assets(assets_raw, effective_ttl)
+
+        assets = DetectionAssets(
+            annotatedImageS3Key=assets_raw.get("annotated_image_s3_key"),
+            vehicleImageS3Key=assets_raw.get("vehicle_image_s3_key"),
+            plateImageS3Key=assets_raw.get("plate_image_s3_key"),
+            annotatedUrl=assets_raw.get("annotatedUrl"),
+            vehicleUrl=assets_raw.get("vehicleUrl"),
+            plateUrl=assets_raw.get("plateUrl"),
+        )
+
         items.append(
             DetectionOut(
                 id=r["id"],
@@ -569,17 +620,16 @@ def list_video_detections(
                 modelConf=r.get("model_conf"),
                 plateText=r.get("plate_text"),
                 plateConf=r.get("plate_conf"),
+                detectedInMs=r.get("detected_in_ms"),
+                detectedAt=r.get("detected_at"),
                 colors=[ColorFBL(**c) for c in colors_raw],
                 parts=[PartEvidence(**p) for p in parts_raw],
                 latencyMs=r.get("latency_ms"),
                 memoryGb=r.get("memory_usage"),
+                gflops=r.get("gflops"),
                 status=r["status"],
                 errorMsg=r.get("error_msg"),
-                assets=DetectionAssets(
-                    annotatedImageS3Key=assets_raw.get("annotated_image_s3_key"),
-                    vehicleImageS3Key=assets_raw.get("vehicle_image_s3_key"),
-                    plateImageS3Key=assets_raw.get("plate_image_s3_key"),
-                ),
+                assets=assets,
             )
         )
 
@@ -588,6 +638,134 @@ def list_video_detections(
         videoId=video_id,
         variant=variant,
         runId=effective_run_id,
+        items=items,
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# GET /workspaces/{workspace_id}/detections
+# ─────────────────────────────────────────────────────────────
+
+@router.get(
+    "/{workspace_id}/detections",
+    response_model=WorkspaceDetectionsOut,
+)
+def list_workspace_detections(
+    workspace_id: str,
+    variant: str = Query("cmt"),
+    presign: int = Query(0, ge=0, le=1),
+    ttl: int = Query(ANALYSIS_TTL_DEFAULT, ge=60, le=604800),
+    me=Depends(require_user),
+):
+    """
+    Lists per-vehicle and per-snapshot detections across all videos in a workspace
+    for the given variant.
+
+    Each row is the same full DetectionOut shape plus videoId.
+
+    This endpoint is intended for:
+    - Workspace-wide "all detections" tables.
+    - Workspace-wide CSV/JSON exports with full detection shape.
+    """
+    effective_ttl = min(int(ttl), ANALYSIS_TTL_DEFAULT)
+
+    with engine.begin() as conn:
+        _assert_workspace(conn, workspace_id, str(me.id))
+
+        rows = conn.execute(
+            text(
+                """
+                SELECT d.id,
+                       d.analysis_id,
+                       d.run_id,
+                       d.track_id,
+                       d.snapshot_s3_key,
+                       d.yolo_type,
+                       d.type_label,
+                       d.type_conf,
+                       d.make_label,
+                       d.make_conf,
+                       d.model_label,
+                       d.model_conf,
+                       d.plate_text,
+                       d.plate_conf,
+                       d.detected_in_ms,
+                       d.detected_at,
+                       d.colors,
+                       d.parts,
+                       d.assets,
+                       d.latency_ms,
+                       d.memory_usage,
+                       d.gflops,
+                       d.status,
+                       d.error_msg,
+                       a.video_id
+                  FROM video_detections d
+                  JOIN video_analyses a
+                    ON d.analysis_id = a.id
+                 WHERE a.workspace_id = :wid
+                   AND a.variant      = :variant
+                   AND d.run_id       = a.run_id
+                 ORDER BY a.video_id,
+                          d.track_id,
+                          d.detected_at NULLS LAST,
+                          d.created_at
+                """
+            ),
+            {"wid": workspace_id, "variant": variant},
+        ).mappings().all()
+
+    items: List[WorkspaceDetectionOut] = []
+    for r in rows:
+        colors_raw = r.get("colors") or []
+        parts_raw = r.get("parts") or []
+        assets_raw = r.get("assets") or {}
+
+        if presign:
+            assets_raw = _presign_assets(assets_raw, effective_ttl)
+
+        assets = DetectionAssets(
+            annotatedImageS3Key=assets_raw.get("annotated_image_s3_key"),
+            vehicleImageS3Key=assets_raw.get("vehicle_image_s3_key"),
+            plateImageS3Key=assets_raw.get("plate_image_s3_key"),
+            annotatedUrl=assets_raw.get("annotatedUrl"),
+            vehicleUrl=assets_raw.get("vehicleUrl"),
+            plateUrl=assets_raw.get("plateUrl"),
+        )
+
+        items.append(
+            WorkspaceDetectionOut(
+                videoId=r["video_id"],
+                id=r["id"],
+                analysisId=r["analysis_id"],
+                runId=str(r["run_id"]),
+                trackId=r["track_id"],
+                snapshotS3Key=r["snapshot_s3_key"],
+                yoloType=r.get("yolo_type"),
+                typeLabel=r.get("type_label"),
+                typeConf=r.get("type_conf"),
+                makeLabel=r.get("make_label"),
+                makeConf=r.get("make_conf"),
+                modelLabel=r.get("model_label"),
+                modelConf=r.get("model_conf"),
+                plateText=r.get("plate_text"),
+                plateConf=r.get("plate_conf"),
+                detectedInMs=r.get("detected_in_ms"),
+                detectedAt=r.get("detected_at"),
+                colors=[ColorFBL(**c) for c in colors_raw],
+                parts=[PartEvidence(**p) for p in parts_raw],
+                latencyMs=r.get("latency_ms"),
+                memoryGb=r.get("memory_usage"),
+                gflops=r.get("gflops"),
+                status=r["status"],
+                errorMsg=r.get("error_msg"),
+                assets=assets,
+            )
+        )
+
+    return WorkspaceDetectionsOut(
+        workspaceId=workspace_id,
+        variant=variant,
         items=items,
     )
 
@@ -632,11 +810,14 @@ def get_video_detection(
                        d.model_conf,
                        d.plate_text,
                        d.plate_conf,
+                       d.detected_in_ms,
+                       d.detected_at,
                        d.colors,
                        d.parts,
                        d.assets,
                        d.latency_ms,
                        d.memory_usage,
+                       d.gflops,
                        d.status,
                        d.error_msg
                   FROM video_detections d
@@ -684,10 +865,13 @@ def get_video_detection(
         modelConf=r.get("model_conf"),
         plateText=r.get("plate_text"),
         plateConf=r.get("plate_conf"),
+        detectedInMs=r.get("detected_in_ms"),
+        detectedAt=r.get("detected_at"),
         colors=[ColorFBL(**c) for c in colors_raw],
         parts=[PartEvidence(**p) for p in parts_raw],
         latencyMs=r.get("latency_ms"),
         memoryGb=r.get("memory_usage"),
+        gflops=r.get("gflops"),
         status=r["status"],
         errorMsg=r.get("error_msg"),
         assets=assets,
@@ -753,10 +937,16 @@ def update_video_detection(
         set_clauses.append("plate_conf = 0.0")
         params["plateText"] = data["plateText"]
 
-    # Colors remain directly editable as JSON
+    # Colors remain directly editable as JSON, but must be JSON-serializable
     if "colors" in data:
         set_clauses.append("colors = :colors")
-        params["colors"] = data["colors"]
+        colors_value = data["colors"]
+        if isinstance(colors_value, list):
+            params["colors"] = [
+                c.dict() if isinstance(c, ColorFBL) else c for c in colors_value
+            ]
+        else:
+            params["colors"] = colors_value
 
     if not set_clauses:
         return get_video_detection(

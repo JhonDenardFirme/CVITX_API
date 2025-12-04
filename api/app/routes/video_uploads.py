@@ -164,14 +164,20 @@ def commit_video(
     if body.fileSizeBytes is not None and int(body.fileSizeBytes) != actual_len:
         raise HTTPException(
             status_code=400,
-            detail=f"File size mismatch (client={body.fileSizeBytes}, s3={actual_len})",
+            detail=(
+                f"File size mismatch "
+                f"(client={body.fileSizeBytes}, s3={actual_len})"
+            ),
         )
 
     actual_ct = head.get("ContentType")
     if body.contentType and actual_ct and body.contentType != actual_ct:
         raise HTTPException(
             status_code=400,
-            detail=f"Content-Type mismatch (client={body.contentType}, s3={actual_ct})",
+            detail=(
+                f"Content-Type mismatch "
+                f"(client={body.contentType}, s3={actual_ct})"
+            ),
         )
 
     params = {
@@ -239,7 +245,11 @@ def commit_video(
                        s3_key_raw,
                        frame_stride,
                        status,
-                       updated_at
+                       created_at,
+                       updated_at,
+                       error_msg,
+                       processing_started_at,
+                       processing_finished_at
                   FROM videos
                  WHERE id = :id
                 """
@@ -266,8 +276,18 @@ def commit_video(
         "s3KeyRaw": row["s3_key_raw"],
         "frameStride": row["frame_stride"],
         "status": row["status"],
+        "createdAt": row["created_at"].isoformat()
+        if row.get("created_at")
+        else None,
         "updatedAt": row["updated_at"].isoformat()
         if row.get("updated_at")
+        else None,
+        "errorMsg": row.get("error_msg"),
+        "processingStartedAt": row["processing_started_at"].isoformat()
+        if row.get("processing_started_at")
+        else None,
+        "processingFinishedAt": row["processing_finished_at"].isoformat()
+        if row.get("processing_finished_at")
         else None,
     }
 
@@ -454,11 +474,21 @@ def enqueue_video(
             {"vid": video_id},
         )
 
+    message_id: Optional[str] = None
+    if isinstance(resp, dict):
+        message_id = (
+            resp.get("MessageId")
+            or resp.get("MessageID")
+            or resp.get("message_id")
+        )
+
     return {
+        "ok": bool(message_id),
+        "status": "queued",
+        "message_id": message_id,
         "videoId": str(v["id"]),
         "enqueueEvent": payload["event"],
         "queueUrl": SQS_VIDEO_QUEUE_URL,
-        "status": "queued",
         "sqsResponse": resp,
     }
 
@@ -630,7 +660,8 @@ def delete_video(
 
     Safety guard:
     - Requires the caller to provide confirmCameraCode matching videos.camera_code.
-    - Refuses deletion if there are active analyses (processing/running).
+    - Refuses deletion if there are active analyses (processing or running).
+    - Refuses deletion if the video is queued or processing at the videos.status level.
     """
     with engine.begin() as conn:
         _assert_workspace(conn, workspace_id, str(me.id))
@@ -641,7 +672,8 @@ def delete_video(
                 SELECT id,
                        workspace_id,
                        camera_code,
-                       s3_key_raw
+                       s3_key_raw,
+                       status
                   FROM videos
                  WHERE id = :vid
                    AND workspace_id = :wid
@@ -657,6 +689,16 @@ def delete_video(
             raise HTTPException(
                 status_code=400,
                 detail="Confirmation camera code does not match",
+            )
+
+        if video["status"] in ("queued", "processing"):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Cannot delete video while analysis job is queued or "
+                    "processing. Please wait for completion or implement an "
+                    "explicit cancel flow."
+                ),
             )
 
         active = conn.execute(
@@ -702,7 +744,8 @@ def delete_video(
             )
             conn.execute(
                 text(
-                    "DELETE FROM video_analysis_results WHERE analysis_id = ANY(:aids)"
+                    "DELETE FROM video_analysis_results "
+                    "WHERE analysis_id = ANY(:aids)"
                 ),
                 {"aids": analysis_ids},
             )
@@ -732,6 +775,24 @@ def delete_video(
             )
         except Exception:
             pass
+
+    prefix = f"{S3_RAW_PREFIX}/{workspace_id}/{video_id}/"
+    try:
+        paginator = s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(
+            Bucket=settings.s3_bucket,
+            Prefix=prefix,
+        ):
+            contents = page.get("Contents") or []
+            if not contents:
+                continue
+            delete_keys = [{"Key": obj["Key"]} for obj in contents]
+            s3.delete_objects(
+                Bucket=settings.s3_bucket,
+                Delete={"Objects": delete_keys, "Quiet": True},
+            )
+    except Exception:
+        pass
 
     return {
         "videoId": str(video["id"]),
