@@ -276,7 +276,6 @@ def get_video_detail(
                        s3_key_raw,
                        frame_stride,
                        status,
-                       created_at,
                        updated_at,
                        error_msg,
                        processing_started_at,
@@ -318,8 +317,8 @@ def get_video_detail(
         ).mappings().first()
 
     video = VideoRowOut(
-        id=v["id"],
-        workspaceId=v["workspace_id"],
+        id=str(v["id"]),
+        workspaceId=str(v["workspace_id"]),
         workspaceCode=v.get("workspace_code"),
         fileName=v["file_name"],
         cameraLabel=v.get("camera_label"),
@@ -328,7 +327,7 @@ def get_video_detail(
         s3KeyRaw=v["s3_key_raw"],
         frameStride=v["frame_stride"],
         status=v["status"],
-        createdAt=v.get("created_at"),
+        createdAt=v.get("updated_at"),
         updatedAt=v.get("updated_at"),
         errorMsg=v.get("error_msg"),
         processingStartedAt=v.get("processing_started_at"),
@@ -338,8 +337,8 @@ def get_video_detail(
     latest_run: Optional[VideoRunSummary] = None
     if va:
         latest_run = VideoRunSummary(
-            analysisId=va["id"],
-            videoId=va["video_id"],
+            analysisId=str(va["id"]),
+            videoId=str(va["video_id"]),
             variant=va["variant"],
             status=va["status"],
             runId=str(va["run_id"]) if va["run_id"] else None,
@@ -401,8 +400,8 @@ def list_video_runs(
     for r in rows:
         items.append(
             VideoRunSummary(
-                analysisId=r["id"],
-                videoId=r["video_id"],
+                analysisId=str(r["id"]),
+                videoId=str(r["video_id"]),
                 variant=r["variant"],
                 status=r["status"],
                 runId=str(r["run_id"]) if r["run_id"] else None,
@@ -471,7 +470,7 @@ def get_video_progress(
 
     return VideoProgressOut(
         workspaceId=workspace_id,
-        videoId=row["video_id"],
+        videoId=str(row["video_id"]),
         variant=row["variant"],
         status=row["status"],
         runId=str(row["run_id"]) if row["run_id"] else None,
@@ -606,8 +605,8 @@ def list_video_detections(
 
         items.append(
             DetectionOut(
-                id=r["id"],
-                analysisId=r["analysis_id"],
+                id=str(r["id"]),
+                analysisId=str(r["analysis_id"]),
                 runId=str(r["run_id"]),
                 trackId=r["track_id"],
                 snapshotS3Key=r["snapshot_s3_key"],
@@ -735,9 +734,9 @@ def list_workspace_detections(
 
         items.append(
             WorkspaceDetectionOut(
-                videoId=r["video_id"],
-                id=r["id"],
-                analysisId=r["analysis_id"],
+                videoId=str(r["video_id"]),
+                id=str(r["id"]),
+                analysisId=str(r["analysis_id"]),
                 runId=str(r["run_id"]),
                 trackId=r["track_id"],
                 snapshotS3Key=r["snapshot_s3_key"],
@@ -851,8 +850,8 @@ def get_video_detection(
     )
 
     return DetectionOut(
-        id=r["id"],
-        analysisId=r["analysis_id"],
+        id=str(r["id"]),
+        analysisId=str(r["analysis_id"]),
         runId=str(r["run_id"]),
         trackId=r["track_id"],
         snapshotS3Key=r["snapshot_s3_key"],

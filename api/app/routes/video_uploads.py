@@ -1,3 +1,5 @@
+# api/app/routes/video_uploads.py
+
 import os
 import uuid
 from datetime import datetime
@@ -245,7 +247,6 @@ def commit_video(
                        s3_key_raw,
                        frame_stride,
                        status,
-                       created_at,
                        updated_at,
                        error_msg,
                        processing_started_at,
@@ -276,8 +277,8 @@ def commit_video(
         "s3KeyRaw": row["s3_key_raw"],
         "frameStride": row["frame_stride"],
         "status": row["status"],
-        "createdAt": row["created_at"].isoformat()
-        if row.get("created_at")
+        "createdAt": row["updated_at"].isoformat()
+        if row.get("updated_at")
         else None,
         "updatedAt": row["updated_at"].isoformat()
         if row.get("updated_at")
@@ -367,14 +368,13 @@ def list_videos(
                        s3_key_raw,
                        frame_stride,
                        status,
-                       created_at,
                        updated_at,
                        error_msg,
                        processing_started_at,
                        processing_finished_at
                   FROM videos
                  WHERE workspace_id = :wid
-                 ORDER BY created_at DESC
+                 ORDER BY updated_at DESC
                 """
             ),
             {"wid": workspace_id},
@@ -384,8 +384,8 @@ def list_videos(
     for v in rows:
         items.append(
             VideoRowOut(
-                id=v["id"],
-                workspaceId=v["workspace_id"],
+                id=str(v["id"]),
+                workspaceId=str(v["workspace_id"]),
                 workspaceCode=v.get("workspace_code"),
                 fileName=v["file_name"],
                 cameraLabel=v.get("camera_label"),
@@ -394,7 +394,7 @@ def list_videos(
                 s3KeyRaw=v["s3_key_raw"],
                 frameStride=v["frame_stride"],
                 status=v["status"],
-                createdAt=v.get("created_at"),
+                createdAt=v.get("updated_at"),
                 updatedAt=v.get("updated_at"),
                 errorMsg=v.get("error_msg"),
                 processingStartedAt=v.get("processing_started_at"),
