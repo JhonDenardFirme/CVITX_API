@@ -163,11 +163,13 @@ def _save_artifacts(
     aid: str,
     wid: str,
     variant: str,
+    run_id: str,
+    track_id: int,
     pil: Image.Image,
     dets: Dict[str, Any],
 ) -> Dict[str, str]:
     out: Dict[str, str] = {}
-    prefix = f"{wid}/{aid}/{variant}/"
+    prefix = f"{wid}/{aid}/{variant}/runs/{run_id}/tracks/{track_id:06d}/"
     try:
         try:
             # Reuse image worker helpers when present
@@ -318,7 +320,7 @@ def _process_one(msg_body: Dict[str, Any], receipt: str) -> None:
         assets: Dict[str, str] = {}
         try:
             pil = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-            assets = _save_artifacts(aid, wid, variant, pil, dets)
+            assets = _save_artifacts(aid, wid, variant, run_id, track_id, pil, dets)
         except Exception as e:
             log.warning("artifact_io: %s", e)
 
