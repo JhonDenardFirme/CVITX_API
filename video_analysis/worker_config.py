@@ -120,6 +120,13 @@ _JPG_QUALITY = _env_int("JPG_QUALITY", 95)
 _YOLO_IMGSZ = _env_int("YOLO_IMGSZ", 640)
 _YOLO_CONF = _env_float("YOLO_CONF", 0.35)
 _YOLO_IOU = _env_float("YOLO_IOU", 0.45)
+# Device selection for YOLO/Ultralytics:
+# Prefer ULTRALYTICS_DEVICE, then YOLO_DEVICE, default to CPU.
+# Examples:
+#   ULTRALYTICS_DEVICE=0          → GPU 0
+#   YOLO_DEVICE=cuda:0            → GPU 0
+_YOLO_DEVICE = _env("ULTRALYTICS_DEVICE", _env("YOLO_DEVICE", "cpu"))
+
 
 # SQS hygiene
 _SQS_VIS_TIMEOUT = _env_int("SQS_VIS_TIMEOUT", 300)  # seconds
@@ -152,6 +159,7 @@ CONFIG: Dict[str, object] = MappingProxyType(
         "YOLO_IMGSZ": _YOLO_IMGSZ,
         "YOLO_CONF": _YOLO_CONF,
         "YOLO_IOU": _YOLO_IOU,
+        "YOLO_DEVICE": _YOLO_DEVICE,
 
         "SQS_VIS_TIMEOUT": _SQS_VIS_TIMEOUT,
         "SQS_HEARTBEAT_SEC": _SQS_HEARTBEAT_SEC,
@@ -221,7 +229,7 @@ def config_summary() -> str:
     """Human-friendly one-liner (safe to log)."""
     return (
         "CFG{region=%s, bucket=%s, videoQ=%s, snapQ=%s, db=%s, "
-        "imgsz=%d, yolo(conf=%.2f,iou=%.2f), snap(640, m=%.2f, nIoU=%.2f), "
+        "imgsz=%d, yolo(dev=%s,conf=%.2f,iou=%.2f), snap(640, m=%.2f, nIoU=%.2f), "
         "sqs(vis=%ds,hb=%ds), color=%s, plate=%s, yolo_types=%d}"
         % (
             CONFIG["AWS_REGION"],
@@ -230,6 +238,7 @@ def config_summary() -> str:
             CONFIG["SQS_SNAPSHOT_QUEUE_URL"],
             _redact_dsn(CONFIG["DB_URL"]),  # redact password
             CONFIG["YOLO_IMGSZ"],
+            CONFIG["YOLO_DEVICE"],
             CONFIG["YOLO_CONF"],
             CONFIG["YOLO_IOU"],
             CONFIG["SNAPSHOT_MARGIN"],
