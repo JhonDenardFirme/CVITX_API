@@ -1171,31 +1171,66 @@ def crop_with_margin(
     neighbor_iou: float = float(CONFIG["SNAPSHOT_NEIGHBOR_IOU"]),
 ) -> np.ndarray:
     """
-    Crop a region with adaptive margin. Inputs:
+    Crop a centred, approximately square region around the given box.
+
+    Inputs:
       frame: H×W×3 uint8 (BGR)
       tlbr:  (x1, y1, x2, y2) in pixel space
-      margin: % of box size added around all sides
-      neighbor_iou: if >0.10, we increase margin slightly to avoid truncation
-    Returns:
-      ROI image (uint8).
+      margin: fraction of the box size added around all sides
+      neighbor_iou: if > 0.10, we slightly increase the effective margin
+                    to avoid truncation in crowded scenes
+
+    Behaviour:
+      • Uses the centre of the box as the crop centre.
+      • Uses the larger of (w, h) as the base side length.
+      • Expands that side by a margin fraction (with a bump when crowded).
+      • Clamps to frame boundaries and guarantees a non-empty crop.
     """
     H, W = frame.shape[:2]
     x1, y1, x2, y2 = map(float, tlbr)
-    w, h = max(1.0, x2 - x1), max(1.0, y2 - y1)
 
-    # Adaptive bump if crowded
+    # Basic width/height with a minimal floor
+    w = max(1.0, x2 - x1)
+    h = max(1.0, y2 - y1)
+
+    # Centre of the YOLO box
+    cx = 0.5 * (x1 + x2)
+    cy = 0.5 * (y1 + y2)
+
+    # Use the larger dimension as the base side so the crop is roughly square
+    base_side = max(w, h)
+
+    # Adaptive bump in crowded scenes (same threshold as before)
     bump = 1.15 if neighbor_iou > 0.10 else 1.0
-    mx, my = (margin * w * bump), (margin * h * bump)
 
-    cx1 = max(0, int(math.floor(x1 - mx)))
-    cy1 = max(0, int(math.floor(y1 - my)))
-    cx2 = min(W, int(math.ceil(x2 + mx)))
-    cy2 = min(H, int(math.ceil(y2 + my)))
+    # Effective side length: base side + margin on both sides
+    side = base_side * (1.0 + 2.0 * margin * bump)
+    half = 0.5 * side
 
-    if cx2 <= cx1 or cy2 <= cy1:
-        # Fallback to entire frame (should not happen with sane boxes)
-        return frame.copy()
-    return frame[cy1:cy2, cx1:cx2].copy()
+    # Ideal float coordinates of the square before clamping
+    lx = cx - half
+    rx = cx + half
+    ty = cy - half
+    by = cy + half
+
+    # Clamp to frame bounds
+    lx = max(0.0, lx)
+    ty = max(0.0, ty)
+    rx = min(float(W), rx)
+    by = min(float(H), by)
+
+    # Convert to integer indices, guarding against empty/inverted slices
+    ix1 = int(math.floor(lx))
+    iy1 = int(math.floor(ty))
+    ix2 = int(math.ceil(rx))
+    iy2 = int(math.ceil(by))
+
+    ix1 = max(0, min(ix1, W - 1))
+    iy1 = max(0, min(iy1, H - 1))
+    ix2 = max(ix1 + 1, min(ix2, W))
+    iy2 = max(iy1 + 1, min(iy2, H))
+
+    return frame[iy1:iy2, ix1:ix2].copy()
 
 
 def letterbox_to_square(

@@ -77,7 +77,11 @@ def _load_yolo() -> YOLO:
         model = YOLO(weights)
         _YOLO_NAMES = {int(k): str(v) for k, v in model.names.items()}
         _YOLO_MODEL = model
-        log.info(f"[yolo] loaded with {len(_YOLO_NAMES)} source classes")
+        log.info(
+            "[yolo] loaded with %d source classes; names=%s",
+            len(_YOLO_NAMES),
+            list(_YOLO_NAMES.values()),
+        )
     return _YOLO_MODEL
 
 
@@ -91,6 +95,14 @@ _SYNONYM_TABLE = {
     "sedan": "Car",
     "coupe": "Car",
     "hatchback": "Car",
+    # Some YOLO variants / aliases
+    "jeep": "Jeepney",
+    "multicab": "Utility",
+    "truck_small": "LightTruck",
+    "truck_large": "ContainerTruck",
+    "bus_small": "Bus",
+    "bus_large": "Bus",
+    "trike": "Tricycle",
     "sports car": "Car",
     "suv": "SUV",
     "crossover": "SUV",
@@ -158,10 +170,10 @@ def _map_source_name_to_taxonomy(src_name: str) -> Optional[str]:
         return mapped if mapped in _TAXONOMY_SET else None
 
     # conservative substring fallbacks (order matters; avoid over-mapping)
+    if "jeepney" in n or ("jeep" in n and "e-" not in n):
+        return "Jeepney" if "Jeepney" in _TAXONOMY_SET else None
     if "e-jeep" in n or "e jeep" in n:
         return "E-Jeepney" if "E-Jeepney" in _TAXONOMY_SET else None
-    if "jeepney" in n:
-        return "Jeepney" if "Jeepney" in _TAXONOMY_SET else None
     if "carousel" in n and "bus" in n:
         return "CarouselBus" if "CarouselBus" in _TAXONOMY_SET else None
     if "bus" in n or "coach" in n or "shuttle" in n:
@@ -286,9 +298,9 @@ class TrackBuf:
             self.votes = {}
 
 
-_MIN_TRACK_AGE = 5
-_MIN_HITS = 3
-_MIN_COMPLETENESS = 0.60
+_MIN_TRACK_AGE = 3
+_MIN_HITS = 2
+_MIN_COMPLETENESS = 0.55
 _IOU_MATCH_DET = 0.30
 
 
@@ -512,6 +524,14 @@ def _process_one_video(body: Dict[str, Any]) -> int:
     variant = full["variant"]
     run_id = full["run_id"]
 
+    # Instrumentation counters (Phase 0 - no behavior change)
+    total_yolo_boxes = 0
+    mapped_vehicle_boxes = 0
+    valid_yolo_boxes = 0  # YOLO boxes that would pass size/AR gate
+    tracks_seen = 0
+    tracks_kept = 0
+    tracks_emitted = 0
+
     # Register or reuse a run container in video_analyses
     # (implementation detail lives in start_video_run; here we just pass the contract fields)
     analysis_id = start_video_run(
@@ -563,6 +583,7 @@ def _process_one_video(body: Dict[str, Any]) -> int:
         raw = []
         if result is not None and result.boxes is not None:
             boxes = result.boxes
+            total_yolo_boxes += len(boxes)
             for i in range(len(boxes)):
                 xyxy = boxes.xyxy[i].cpu().numpy().tolist()
                 x1, y1, x2, y2 = map(int, xyxy)
@@ -572,6 +593,10 @@ def _process_one_video(body: Dict[str, Any]) -> int:
                 mapped = _map_source_name_to_taxonomy(src_name)
                 if not mapped:
                     continue  # drop non-vehicles / unknowns
+                mapped_vehicle_boxes += 1
+                # instrumentation only: check which YOLO boxes would pass bbox gate
+                if _is_valid_bbox((x1, y1, x2, y2), W, H):
+                    valid_yolo_boxes += 1
                 w, h = x2 - x1, y2 - y1
                 if w <= 0 or h <= 0:
                     continue
@@ -642,6 +667,10 @@ def _process_one_video(body: Dict[str, Any]) -> int:
         ):
             best_by_tid[tid] = tb
 
+    # instrumentation: track-level stats
+    tracks_seen = len(track_buf)
+    tracks_kept = len(best_by_tid)
+
     # Export best frames per track
     emitted_payloads = _rank_and_export_bestmap(
         best_by_tid=best_by_tid,
@@ -657,6 +686,7 @@ def _process_one_video(body: Dict[str, Any]) -> int:
         analysis_id=analysis_id,
     )
     emitted = len(emitted_payloads)
+    tracks_emitted = emitted
 
     # Set run total for progress bar
     try:
@@ -673,6 +703,19 @@ def _process_one_video(body: Dict[str, Any]) -> int:
     log.info(
         f"[summary] video_id={vid} frames={total_frames} stride={stride} "
         f"dets={kept_dets} tracks={len(best_by_tid)} emitted={emitted}"
+    )
+
+    # Detailed snapshot pipeline stats (Phase 0 instrumentation)
+    log.info(
+        "[stats] snapshot_stats video_id=%s total_yolo=%d mapped=%d valid=%d "
+        "tracks_seen=%d tracks_kept=%d tracks_emitted=%d",
+        vid,
+        total_yolo_boxes,
+        mapped_vehicle_boxes,
+        valid_yolo_boxes,
+        tracks_seen,
+        tracks_kept,
+        tracks_emitted,
     )
     return emitted
 

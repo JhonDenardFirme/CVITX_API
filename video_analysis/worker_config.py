@@ -1,4 +1,3 @@
-# === START PASTE (worker_config.py) ===
 # file: video_analysis/worker_config.py
 """
 CVITX · Video Analysis Monorepo
@@ -112,13 +111,13 @@ _FRAME_STRIDE_DEFAULT = _env_int("FRAME_STRIDE_DEFAULT", 3)
 
 # Snapshot invariants
 _SNAPSHOT_SIZE = _env_int("SNAPSHOT_SIZE", 640)  # final square side (px)
-_SNAPSHOT_MARGIN = _env_float("SNAPSHOT_MARGIN", 0.15)  # adaptive context
+_SNAPSHOT_MARGIN = _env_float("SNAPSHOT_MARGIN", 0.30)  # adaptive context (Phase-1/2 default)
 _SNAPSHOT_NEIGHBOR_IOU = _env_float("SNAPSHOT_NEIGHBOR_IOU", 0.03)
 _JPG_QUALITY = _env_int("JPG_QUALITY", 95)
 
 # YOLO inference knobs
 _YOLO_IMGSZ = _env_int("YOLO_IMGSZ", 640)
-_YOLO_CONF = _env_float("YOLO_CONF", 0.35)
+_YOLO_CONF = _env_float("YOLO_CONF", 0.22)
 _YOLO_IOU = _env_float("YOLO_IOU", 0.45)
 # Device selection for YOLO/Ultralytics:
 # Prefer ULTRALYTICS_DEVICE, then YOLO_DEVICE, default to CPU.
@@ -322,8 +321,6 @@ __all__ = [
     "assert_config_sane",
 ]
 
-# === END PASTE (worker_config.py) ===
-
 # --- Stable SQS alias keys (optional but convenient) ---
 try:
     _cfg = CONFIG  # already built above
@@ -359,3 +356,4 @@ try:
         CONFIG["SQS_SNAPSHOT_Q_URL"] = _snap_url
 except Exception:
     pass
+
